@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-# Thêm đường dẫn project
+# Add project path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from backend.project_schemas import (
@@ -29,12 +29,12 @@ class TestMatrixContract(unittest.TestCase):
         self.assertAlmostEqual(p[1], 170.0)
 
     def test_rotation_scale_composition(self):
-        # Scale 2x rồi Rotate 90 độ quanh gốc
+        # Scale 2x then Rotate 90 degrees around origin
         s = matrix_scale(2.0, 2.0)
         r = matrix_rotate(np.pi / 2) # 90 deg
         composed = matrix_multiply(r, s)
         
-        # Điểm (10, 0) -> scale 2x = (20, 0) -> rot 90 = (0, 20)
+        # Point (10, 0) -> scale 2x = (20, 0) -> rot 90 = (0, 20)
         p = transform_point(composed, 10, 0)
         self.assertAlmostEqual(p[0], 0.0, places=5)
         self.assertAlmostEqual(p[1], 20.0, places=5)

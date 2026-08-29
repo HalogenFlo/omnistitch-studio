@@ -1,6 +1,6 @@
-# Chức năng: Xử lý Đọc & Ghi ảnh định dạng TIFF / TIF (.tif, .tiff) chuyên dụng cho kính hiển vi mô học
-# Lí do tạo: Đảm bảo đọc nguyên vẹn dải màu, độ phân giải gốc 100% không suy hao (zero-loss), hỗ trợ 8-bit/16-bit, nén LZW và tạo thumbnail xem web
-# Đường dẫn: tool/image_alignment/backend/io_utils.py
+# Feature: High-performance reading and writing for TIFF/BigTIFF formats
+# Purpose: Preserves full bit-depth, lossless native resolution, 8-bit/16-bit support, LZW compression, and thumbnail generation
+# Path: tool/image_alignment/backend/io_utils.py
 
 import os
 import cv2
@@ -10,7 +10,7 @@ from PIL import Image
 
 def read_image(file_path):
     """
-    Đọc ảnh từ file_path, hỗ trợ toàn diện .tif, .tiff, .png, .jpg, .bmp.
+    Reads image from file_path supporting .tif, .tiff, .png, .jpg, .bmp.
     Trả về uint8 RGB hoặc RGBA theo đúng thứ tự kênh. Alpha nguồn không bị bỏ.
     """
     if not os.path.exists(file_path):
@@ -213,7 +213,7 @@ def read_image_region(file_path: str, box):
         raise FileNotFoundError(f"File không tồn tại: {file_path}")
     x1, y1, x2, y2 = [int(value) for value in box]
     if x2 <= x1 or y2 <= y1:
-        raise ValueError("Source ROI không hợp lệ")
+        raise ValueError("Source ROI is invalid")
     is_tiff = os.path.splitext(file_path)[1].lower() in ('.tif', '.tiff')
     if is_tiff:
         try:

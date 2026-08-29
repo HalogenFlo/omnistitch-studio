@@ -12,6 +12,14 @@
 
 *An end-to-end open-source scientific image stitching studio for gigapixel mosaics, featuring robust 2D SIFT global alignment, DeepZoom (DZI) interactive pyramids, Canva-style manual adjustments, and localized patch clarity inspection.*
 
+<br>
+
+<p align="center">
+  <img src="docs/images/omnistitch_studio_hero.png" alt="OmniStitch Studio - Interactive Gigapixel Exploration & Clarity Inspector" width="100%">
+  <br>
+  <em>OmniStitch Studio Interface: Interactive Gigapixel DeepZoom Navigation, 2D Grid Alignment, and Multi-Focus Clarity Inspector.</em>
+</p>
+
 </div>
 
 ---
@@ -170,6 +178,31 @@ OK
 
 ---
 
+## 👤 Author & Maintainer
+
+- **HalogenBr** ([@Phatjhhoq8](https://github.com/Phatjhhoq8))
+  - Sole Creator, Lead Architect & Primary Maintainer
+  - Algorithmic Pipeline, Multi-Focus Clarity Inspector & Pyramidal DeepZoom Engine
+
+---
+
+## 📚 Citation
+
+If you use **OmniStitch Studio** in your research, academic papers, or clinical studies, please cite:
+
+```bibtex
+@software{halogenbr_omnistitch_studio_2026,
+  author       = {HalogenBr},
+  title        = {OmniStitch Studio: Cross-Domain Gigapixel Image Stitching & Multi-Focus Clarity Inspector for Microscopy and Remote Sensing},
+  year         = {2026},
+  publisher    = {GitHub},
+  version      = {1.0.0},
+  url          = {https://github.com/Phatjhhoq8/omnistitch-studio}
+}
+```
+
+---
+
 ## 🤝 Contributing & Community
 
 Contributions, issues, and feature requests are welcome!
@@ -186,4 +219,5 @@ Please check our community guidelines and policies:
 ## 📄 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-Researchers and software developers are free to use, modify, and distribute this software for academic, clinical, and commercial applications.
+Copyright (c) 2026 **HalogenBr**.
+Researchers and developers are free to use, modify, and distribute this software for academic, clinical, and commercial applications.

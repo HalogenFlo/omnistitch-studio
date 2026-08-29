@@ -1,7 +1,7 @@
 """
-Chức năng: Định nghĩa Schema cho Project State, Layers, Transform 3x3 Matrices và Color Adjustments
-Lí do tạo: Đảm bảo tính nhất quán giữa Frontend (Canvas Editor) và Backend (Export & Persistence)
-Đường dẫn: tool/image_alignment/backend/project_schemas.py
+Feature: Defines schemas for Project State, Layers, 3x3 Transform Matrices, and Color Adjustments
+Purpose: Ensures bidirectional consistency between Frontend (Canvas) and Backend (Export/Store)
+Path: tool/image_alignment/backend/project_schemas.py
 """
 
 import json
@@ -9,7 +9,7 @@ import math
 from typing import List, Dict, Any, Optional
 import numpy as np
 
-# Type alias cho ma trận 3x3 [m00, m01, m02, m10, m11, m12, m20, m21, m22] (Row-major)
+# Type alias for 3x3 matrix [m00..m22] in row-major order
 Matrix3x3 = List[float]
 CURRENT_PROJECT_VERSION = 3
 MAX_HISTORY_COMMANDS = 200
@@ -19,7 +19,7 @@ MAX_REGION_POINTS = 10000
 def _bounded_float(value: Any, field: str, minimum: float, maximum: float) -> float:
     result = float(value)
     if not math.isfinite(result) or result < minimum or result > maximum:
-        raise ValueError(f"{field} phải hữu hạn trong khoảng [{minimum}, {maximum}]")
+        raise ValueError(f"{field} must be finite within [{minimum}, {maximum}]")
     return result
 
 
@@ -29,11 +29,11 @@ def _validate_points(points: Any, field: str, minimum: int = 0) -> List[List[flo
     if not isinstance(points, list) or len(points) < minimum:
         raise ValueError(f"{field} phải có ít nhất {minimum} điểm")
     if len(points) > MAX_REGION_POINTS:
-        raise ValueError(f"{field} vượt giới hạn {MAX_REGION_POINTS} điểm")
+        raise ValueError(f"{field} exceeds limit {MAX_REGION_POINTS} điểm")
     result = []
     for point in points:
         if not isinstance(point, (list, tuple)) or len(point) != 2:
-            raise ValueError(f"{field} chứa điểm không hợp lệ")
+            raise ValueError(f"{field} chứa điểm is invalid")
         xy = [float(point[0]), float(point[1])]
         if not all(math.isfinite(value) for value in xy):
             raise ValueError(f"{field} chứa tọa độ không hữu hạn")
@@ -641,7 +641,7 @@ class ProjectState:
         if not project.id:
             raise ValueError("Project id không được để trống")
         if project.revision < 0 or project.geometryRevision < 1:
-            raise ValueError("Revision không hợp lệ")
+            raise ValueError("Revision is invalid")
         ids = [layer.id for layer in project.layers]
         if any(not value for value in ids) or len(ids) != len(set(ids)):
             raise ValueError("Layer id phải khác rỗng và duy nhất")

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WSI Stitching Studio - Ghép Ảnh Kính Hiển Vi & Canva Editor</title>
+    <title>OmniStitch Studio - Gigapixel Microscopy & Remote Sensing Studio</title>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,15 +19,15 @@
         <!-- Top Navigation Bar -->
         <header class="app-header">
             <div class="brand">
-                <button class="btn-icon mobile-sidebar-toggle" id="btnToggleSidebar" title="Thu gọn / Mở sidebar">
+                <button class="btn-icon mobile-sidebar-toggle" id="btnToggleSidebar" title="Toggle Sidebar">
                     <i class="fa-solid fa-bars"></i>
                 </button>
                 <div class="brand-icon">
                     <i class="fa-solid fa-microscope"></i>
                 </div>
                 <div class="brand-info">
-                    <h1>WSI Stitching Studio</h1>
-                    <span class="tagline">Ghép Ảnh Tiêu Bản Mô Học & Tinh Chỉnh Thủ Công</span>
+                    <h1>OmniStitch Studio</h1>
+                    <span class="tagline">Gigapixel Microscopy & Remote Sensing Studio</span>
                 </div>
             </div>
 
@@ -35,10 +35,10 @@
             <div class="mode-switcher-container">
                 <div class="mode-switcher">
                     <button class="mode-btn active" id="btnModeAuto" data-mode="auto">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i> Ghép Tự Động
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Auto Stitching
                     </button>
                     <button class="mode-btn" id="btnModeManual" data-mode="manual">
-                        <i class="fa-solid fa-palette"></i> Ghép Thủ Công (Canva)
+                        <i class="fa-solid fa-palette"></i> Manual Canvas
                     </button>
                 </div>
             </div>
@@ -46,25 +46,25 @@
             <div class="header-actions">
                 <div class="status-badge ready" id="globalStatusBadge">
                     <span class="pulse-dot"></span>
-                    <span id="statusBadgeText">Sẵn sàng</span>
+                    <span id="statusBadgeText">Ready</span>
                 </div>
 
-                <!-- Nút Làm Mới toàn bộ dự án -->
-                <button class="btn btn-sm btn-outline" id="btnResetAll" title="Làm mới toàn bộ (xóa sạch để nạp ảnh mới)">
+                <!-- Reset All Button -->
+                <button class="btn btn-sm btn-outline" id="btnResetAll" title="Reset entire workspace">
                     <i class="fa-solid fa-arrows-rotate"></i>
-                    <span>Làm Mới</span>
+                    <span>Reset All</span>
                 </button>
 
-                <!-- Nút Ghép ảnh (Chỉ xử lý xem trước, KHÔNG tự động lưu) -->
+                <!-- Stitch Preview Button -->
                 <button class="btn btn-primary" id="btnRunStitching">
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
-                    <span id="btnStitchText">Ghép Ảnh (Xem Trước)</span>
+                    <span id="btnStitchText">Stitch Preview</span>
                 </button>
 
-                <!-- Nút Lưu Chính Thức (Chỉ lưu khi bấm) -->
+                <!-- Save Output Button -->
                 <button class="btn btn-success" id="btnSaveOutput" style="display: none;">
                     <i class="fa-solid fa-floppy-disk"></i>
-                    <span>Lưu Ảnh Kết Quả</span>
+                    <span>Save Output</span>
                 </button>
             </div>
         </header>
@@ -76,31 +76,31 @@
                 <!-- Tab Controls -->
                 <div class="sidebar-tabs">
                     <button class="tab-btn active" data-tab="tab-source">
-                        <i class="fa-solid fa-folder-open"></i> Nguồn Ảnh
+                        <i class="fa-solid fa-folder-open"></i> Image Source
                     </button>
                     <button class="tab-btn" data-tab="tab-manual-layers" id="tabBtnLayers">
-                        <i class="fa-solid fa-layer-group"></i> Lớp & Màu Sắc
+                        <i class="fa-solid fa-layer-group"></i> Layers & Color
                     </button>
                     <button class="tab-btn" data-tab="tab-config">
-                        <i class="fa-solid fa-sliders"></i> Cấu Hình & Lưu
+                        <i class="fa-solid fa-sliders"></i> Settings & Export
                     </button>
                 </div>
 
                 <!-- Tab 1: Source Folder & Tile List -->
                 <div class="tab-content active" id="tab-source">
                     <div class="panel-section">
-                        <!-- Dropzone & Folder Upload (Phương thức duy nhất) -->
+                        <!-- Dropzone & Folder Upload -->
                         <div class="upload-dropzone" id="uploadDropzone">
                             <div class="dropzone-inner">
                                 <i class="fa-solid fa-folder-arrow-up dropzone-icon"></i>
-                                <h3>Kéo thả thư mục ảnh vào đây</h3>
-                                <p class="dropzone-sub">Hỗ trợ định dạng <b>.TIF / .TIFF / .PNG / .JPG</b></p>
+                                <h3>Drag & drop image folder here</h3>
+                                <p class="dropzone-sub">Supports <b>.TIF / .TIFF / .PNG / .JPG / .BMP</b></p>
                                 <div class="dropzone-buttons">
                                     <button class="btn btn-sm btn-primary" id="btnBrowseFolder" type="button">
-                                        <i class="fa-solid fa-folder-open"></i> Chọn thư mục từ máy
+                                        <i class="fa-solid fa-folder-open"></i> Browse Folder
                                     </button>
                                     <button class="btn-sm btn-outline" id="btnBrowseFiles" type="button">
-                                        <i class="fa-solid fa-file-image"></i> Chọn file lẻ
+                                        <i class="fa-solid fa-file-image"></i> Browse Files
                                     </button>
                                 </div>
                             </div>
@@ -110,11 +110,11 @@
 
                         <!-- Selection Stats & Quick Action Bar -->
                         <div class="selection-header">
-                            <span class="badge" id="selectedCountBadge">0 đã chọn</span>
+                            <span class="badge" id="selectedCountBadge">0 selected</span>
                             <div class="list-action-bar">
-                                <button class="btn-sm" id="btnSelectAll"><i class="fa-solid fa-check-double"></i> Tất cả</button>
-                                <button class="btn-sm" id="btnDeselectAll"><i class="fa-solid fa-xmark"></i> Bỏ chọn</button>
-                                <button class="btn-sm btn-outline" id="btnClearList" title="Xóa toàn bộ danh sách để nạp thư mục mới"><i class="fa-solid fa-trash-can"></i> Xóa hết</button>
+                                <button class="btn-sm" id="btnSelectAll"><i class="fa-solid fa-check-double"></i> Select All</button>
+                                <button class="btn-sm" id="btnDeselectAll"><i class="fa-solid fa-xmark"></i> Deselect All</button>
+                                <button class="btn-sm btn-outline" id="btnClearList" title="Clear list"><i class="fa-solid fa-trash-can"></i> Clear All</button>
                             </div>
                         </div>
 
@@ -122,7 +122,7 @@
                         <div class="tile-grid-container" id="tileGridContainer">
                             <div class="empty-state">
                                 <i class="fa-regular fa-folder-open"></i>
-                                <p>Kéo thả hoặc chọn thư mục từ máy tính để bắt đầu</p>
+                                <p>Drag & drop or browse a folder from your computer to begin</p>
                             </div>
                         </div>
                     </div>
@@ -133,11 +133,11 @@
                     <div class="panel-section">
                         <!-- Layer Action Bar -->
                         <div class="layer-action-bar">
-                            <span class="form-label"><i class="fa-solid fa-layer-group"></i> Thứ tự lớp ảnh:</span>
+                            <span class="form-label"><i class="fa-solid fa-layer-group"></i> Layer Stacking Order:</span>
                             <div class="btn-group-sm">
-                                <button class="btn-sm" id="btnLayerUp" title="Đưa lên trên"><i class="fa-solid fa-arrow-up"></i></button>
-                                <button class="btn-sm" id="btnLayerDown" title="Hạ xuống dưới"><i class="fa-solid fa-arrow-down"></i></button>
-                                <button class="btn-sm" id="btnLayerLock" title="Khóa/Mở khóa"><i class="fa-solid fa-lock"></i></button>
+                                <button class="btn-sm" id="btnLayerUp" title="Bring Forward"><i class="fa-solid fa-arrow-up"></i></button>
+                                <button class="btn-sm" id="btnLayerDown" title="Send Backward"><i class="fa-solid fa-arrow-down"></i></button>
+                                <button class="btn-sm" id="btnLayerLock" title="Lock / Unlock Layer"><i class="fa-solid fa-lock"></i></button>
                             </div>
                         </div>
 
@@ -145,20 +145,20 @@
                         <div class="layers-list-container" id="layersListContainer">
                             <div class="empty-state">
                                 <i class="fa-regular fa-images"></i>
-                                <p>Chưa có layer nào. Hãy nạp ảnh ở tab Nguồn Ảnh.</p>
+                                <p>No layers yet. Load images from the Image Source tab.</p>
                             </div>
                         </div>
 
                         <!-- Selected Layer Adjustment Controls -->
                         <div class="layer-adjustments-card" id="layerAdjustmentsCard">
                             <div class="card-header">
-                                <span class="card-title"><i class="fa-solid fa-sliders"></i> Chỉnh sửa: <b id="adjustLayerName">-</b></span>
+                                <span class="card-title"><i class="fa-solid fa-sliders"></i> Adjust: <b id="adjustLayerName">-</b></span>
                             </div>
 
                             <!-- Opacity Slider -->
                             <div class="adjust-control">
                                 <div class="adjust-label-row">
-                                    <span><i class="fa-solid fa-eye"></i> Độ trong suốt (Opacity):</span>
+                                    <span><i class="fa-solid fa-eye"></i> Opacity:</span>
                                     <span class="adjust-val" id="valOpacity">100%</span>
                                 </div>
                                 <input type="range" id="sliderOpacity" min="0.1" max="1" step="0.05" value="1">
@@ -167,7 +167,7 @@
                             <!-- Brightness Slider -->
                             <div class="adjust-control">
                                 <div class="adjust-label-row">
-                                    <span><i class="fa-solid fa-sun"></i> Độ sáng (Brightness):</span>
+                                    <span><i class="fa-solid fa-sun"></i> Brightness:</span>
                                     <span class="adjust-val" id="valBrightness">100%</span>
                                 </div>
                                 <input type="range" id="sliderBrightness" min="0.5" max="1.8" step="0.05" value="1">
@@ -176,7 +176,7 @@
                             <!-- Contrast Slider -->
                             <div class="adjust-control">
                                 <div class="adjust-label-row">
-                                    <span><i class="fa-solid fa-circle-half-stroke"></i> Độ tương phản (Contrast):</span>
+                                    <span><i class="fa-solid fa-circle-half-stroke"></i> Contrast:</span>
                                     <span class="adjust-val" id="valContrast">100%</span>
                                 </div>
                                 <input type="range" id="sliderContrast" min="0.5" max="2.0" step="0.05" value="1">
@@ -185,14 +185,14 @@
                             <!-- Saturation Slider -->
                             <div class="adjust-control">
                                 <div class="adjust-label-row">
-                                    <span><i class="fa-solid fa-droplet"></i> Bão hòa màu (Saturation):</span>
+                                    <span><i class="fa-solid fa-droplet"></i> Saturation:</span>
                                     <span class="adjust-val" id="valSaturation">100%</span>
                                 </div>
                                 <input type="range" id="sliderSaturation" min="0.0" max="2.5" step="0.05" value="1">
                             </div>
 
                             <button class="btn-sm btn-outline w-100 mt-2" id="btnResetAdjustments">
-                                <i class="fa-solid fa-rotate-left"></i> Đặt lại mặc định
+                                <i class="fa-solid fa-rotate-left"></i> Reset Defaults
                             </button>
                         </div>
                     </div>
@@ -202,62 +202,62 @@
                 <div class="tab-content" id="tab-config">
                     <div class="panel-section">
                         <div class="section-title">
-                            <span><i class="fa-solid fa-folder-tree"></i> Thư mục Đích Lưu Ảnh</span>
+                            <span><i class="fa-solid fa-folder-tree"></i> Output Destination Directory</span>
                         </div>
 
                         <!-- Target Destination Folder Input -->
                         <div class="form-group">
-                            <label class="form-label">Chọn / Nhập thư mục đích lưu kết quả:</label>
+                            <label class="form-label">Output target directory:</label>
                             <div class="input-group">
-                                <input type="text" id="inputOutputDir" class="form-input" value="data/result" placeholder="Mặc định: data/result">
+                                <input type="text" id="inputOutputDir" class="form-input" value="data/result" placeholder="Default: data/result">
                             </div>
-                            <span class="form-hint">Ảnh kết quả chỉ được ghi vào thư mục này khi bạn bấm nút <b>"Lưu Ảnh Kết Quả"</b>.</span>
+                            <span class="form-hint">Result files are only written here when you click <b>"Save Output"</b>.</span>
                         </div>
 
                         <div class="section-title mt-2">
-                            <span><i class="fa-solid fa-gear"></i> Cấu hình Thuật toán</span>
+                            <span><i class="fa-solid fa-gear"></i> Pipeline Configuration</span>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Phương pháp trích xuất đặc trưng:</label>
+                            <label class="form-label">Feature extraction method:</label>
                             <div class="select-wrapper">
                                 <select id="cfgFeatureMethod" class="form-select">
-                                    <option value="sift" selected>SIFT (Độ chính xác cao nhất - Khuyến nghị)</option>
-                                    <option value="akaze">AKAZE (Bất biến quang sai & đa dải tần)</option>
-                                    <option value="orb">ORB (Tốc độ nhanh)</option>
+                                    <option value="sift" selected>SIFT (Highest accuracy - Recommended)</option>
+                                    <option value="akaze">AKAZE (Multi-scale & optical invariance)</option>
+                                    <option value="orb">ORB (Fast / Real-time)</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Mô hình hình học (Motion Model):</label>
+                            <label class="form-label">Geometric motion model:</label>
                             <div class="select-wrapper">
                                 <select id="cfgMotionModel" class="form-select">
-                                    <option value="affine" selected>Affine (Bảo toàn tỉ lệ & xoay góc kính vi thể)</option>
-                                    <option value="homography">Homography (Chiếu phối cảnh đầy đủ 8-DOF)</option>
-                                    <option value="rigid">Rigid (Chỉ tịnh tiến và quay góc)</option>
+                                    <option value="affine" selected>Affine (Preserves scale & rotation - Recommended)</option>
+                                    <option value="homography">Homography (Full 8-DOF perspective projection)</option>
+                                    <option value="rigid">Rigid (Translation and rotation only)</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Xử lý nền viền khuyết (Background):</label>
+                            <label class="form-label">Background seam fill mode:</label>
                             <div class="select-wrapper">
                                 <select id="cfgBackgroundMode" class="form-select">
-                                    <option value="white" selected>Nền trắng kính hiển vi (#FFFFFF)</option>
-                                    <option value="transparent">Nền trong suốt (Alpha Channel)</option>
-                                    <option value="black">Nền đen (#000000)</option>
+                                    <option value="white" selected>Microscope white background (#FFFFFF)</option>
+                                    <option value="transparent">Transparent background (Alpha Channel)</option>
+                                    <option value="black">Black background (#000000)</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Định dạng WSI xuất ra:</label>
+                            <label class="form-label">Output file format:</label>
                             <div class="select-wrapper">
                                 <select id="cfgExportFormat" class="form-select">
-                                    <option value="tif" selected>TIFF / BigTIFF (.tif - Chuẩn Kính hiển vi)</option>
-                                    <option value="png">PNG (.png - Lossless chất lượng cao)</option>
-                                    <option value="jpg">JPEG (.jpg - Kích thước gọn nhẹ)</option>
+                                    <option value="tif" selected>TIFF / BigTIFF (.tif - Microscopy & GIS standard)</option>
+                                    <option value="png">PNG (.png - High-resolution lossless)</option>
+                                    <option value="jpg">JPEG (.jpg - Lightweight)</option>
                                 </select>
                             </div>
                         </div>
@@ -265,7 +265,7 @@
                         <div class="form-group">
                             <label class="checkbox-label">
                                 <input type="checkbox" id="cfgAutoCrop">
-                                <span>Tự động cắt viền hình chữ nhật nội tiếp (Auto-Crop)</span>
+                                <span>Auto-crop inscribed bounding box</span>
                             </label>
                         </div>
                     </div>
@@ -273,16 +273,16 @@
 
                 <!-- Progress Panel (Real-time logs with drag resize) -->
                 <div class="progress-panel" id="progressPanel" style="display: none;">
-                    <div class="progress-panel-resizer" id="progressPanelResizer" title="Kéo lên/xuống để điều chỉnh độ cao khung tiến trình">
+                    <div class="progress-panel-resizer" id="progressPanelResizer" title="Drag to resize progress panel height">
                         <span class="resizer-handle-pill"></span>
                     </div>
                     <div class="progress-header">
                         <div class="progress-header-left">
-                            <span id="progressStepTitle"><i class="fa-solid fa-spinner fa-spin"></i> Đang xử lý...</span>
+                            <span id="progressStepTitle"><i class="fa-solid fa-spinner fa-spin"></i> Processing...</span>
                         </div>
                         <div class="progress-header-right">
                             <span id="progressPercentage">0%</span>
-                            <button type="button" class="btn-progress-expand" id="btnToggleProgressExpand" title="Bật/Thu gọn độ cao bảng tiến trình">
+                            <button type="button" class="btn-progress-expand" id="btnToggleProgressExpand" title="Toggle progress panel height">
                                 <i class="fa-solid fa-up-right-and-down-left-from-center" id="iconProgressExpand"></i>
                             </button>
                         </div>
@@ -299,43 +299,43 @@
                 <!-- Viewport Header Toolbar -->
                 <div class="viewport-header">
                     <div class="viewport-title-info">
-                        <span id="viewportCurrentModeLabel"><i class="fa-solid fa-wand-magic-sparkles"></i> Chế Độ: <b>Ghép Tự Động WSI</b></span>
+                        <span id="viewportCurrentModeLabel"><i class="fa-solid fa-wand-magic-sparkles"></i> Mode: <b>Auto Stitching (DZI)</b></span>
                     </div>
 
-                    <!-- Canva Editor Toolbar (Hiện khi ở Manual mode) -->
+                    <!-- Canva Editor Toolbar -->
                     <div class="manual-toolbar" id="manualToolbar" style="display: none;">
-                        <button class="btn-sm" id="btnUndo" title="Hoàn tác (Ctrl+Z)"><i class="fa-solid fa-rotate-left"></i> Undo</button>
-                        <button class="btn-sm" id="btnRedo" title="Làm lại (Ctrl+Y)"><i class="fa-solid fa-rotate-right"></i> Redo</button>
+                        <button class="btn-sm" id="btnUndo" title="Undo (Ctrl+Z)"><i class="fa-solid fa-rotate-left"></i> Undo</button>
+                        <button class="btn-sm" id="btnRedo" title="Redo (Ctrl+Y)"><i class="fa-solid fa-rotate-right"></i> Redo</button>
                         <span class="toolbar-divider"></span>
-                        <button class="btn-sm" id="btnFitContent" title="Căn giữa toàn bộ ảnh"><i class="fa-solid fa-expand"></i> Căn Giữa</button>
-                        <button class="btn-sm" id="btnZoomIn" title="Phóng to"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
-                        <button class="btn-sm" id="btnZoomOut" title="Thu nhỏ"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+                        <button class="btn-sm" id="btnFitContent" title="Fit to view"><i class="fa-solid fa-expand"></i> Fit View</button>
+                        <button class="btn-sm" id="btnZoomIn" title="Zoom In"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+                        <button class="btn-sm" id="btnZoomOut" title="Zoom Out"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
                     </div>
 
                     <div class="result-actions" id="resultActions" style="display: none;">
                         <button class="btn btn-sm btn-success" id="btnSaveTrigger">
-                            <i class="fa-solid fa-floppy-disk"></i> <span id="saveBtnText">Lưu Vào Thư Mục Đích</span>
+                            <i class="fa-solid fa-floppy-disk"></i> <span id="saveBtnText">Save to Destination</span>
                         </button>
-                        <button class="btn btn-sm btn-outline" id="btnResetViewer" title="Căn giữa ảnh">
-                            <i class="fa-solid fa-arrows-to-dot"></i> Căn Giữa
+                        <button class="btn btn-sm btn-outline" id="btnResetViewer" title="Center view">
+                            <i class="fa-solid fa-arrows-to-dot"></i> Fit View
                         </button>
                     </div>
 
                     <div class="auto-viewer-toolbar" id="autoViewerToolbar">
-                        <button class="btn-sm" id="btnOsdNavigate" title="Kéo để di chuyển ảnh"><i class="fa-solid fa-hand"></i> Điều hướng</button>
-                        <button class="btn-sm" id="btnOsdZoomOut" title="Thu nhỏ"><i class="fa-solid fa-minus"></i></button>
-                        <button class="btn-sm" id="btnOsdZoomIn" title="Phóng to"><i class="fa-solid fa-plus"></i></button>
-                        <button class="btn-sm" id="btnOsdFit" title="Vừa toàn bộ ảnh">Fit</button>
-                        <button class="btn-sm" id="btnOsdOneToOne" title="Một pixel ảnh trên một pixel màn hình">1:1</button>
-                        <button class="btn-sm" id="btnOsdReset" title="Khôi phục góc nhìn mặc định">Reset</button>
+                        <button class="btn-sm" id="btnOsdNavigate" title="Pan to navigate"><i class="fa-solid fa-hand"></i> Pan</button>
+                        <button class="btn-sm" id="btnOsdZoomOut" title="Zoom Out"><i class="fa-solid fa-minus"></i></button>
+                        <button class="btn-sm" id="btnOsdZoomIn" title="Zoom In"><i class="fa-solid fa-plus"></i></button>
+                        <button class="btn-sm" id="btnOsdFit" title="Fit entire slide">Fit</button>
+                        <button class="btn-sm" id="btnOsdOneToOne" title="One pixel per screen pixel">1:1</button>
+                        <button class="btn-sm" id="btnOsdReset" title="Reset default view">Reset</button>
                         <span class="zoom-indicator" id="osdZoomIndicator">--</span>
                     </div>
 
                     <!-- Inspector Mode Quick Toggle Button -->
                     <div class="viewport-inspector-toggle">
-                        <button class="btn btn-sm btn-outline" id="btnToggleInspectMode" title="Bật/Tắt Bộ Soi Vùng Đa Tiêu Cự & Chọn Ảnh Nét Nhất">
+                        <button class="btn btn-sm btn-outline" id="btnToggleInspectMode" title="Toggle Multi-Focus & De-Clouding Clarity Inspector">
                             <i class="fa-solid fa-crosshairs"></i>
-                            <span id="inspectModeToggleText">Soi Vùng Nét: <b>TẮT</b></span>
+                            <span id="inspectModeToggleText">Clarity Inspector: <b>OFF</b></span>
                         </button>
                     </div>
                 </div>
@@ -346,8 +346,8 @@
                     <canvas id="osdDrawingCanvas" class="osd-drawing-canvas"></canvas>
                     <div class="osd-placeholder" id="osdPlaceholder">
                         <i class="fa-solid fa-layer-group"></i>
-                        <h3>WSI DeepZoom Viewer</h3>
-                        <p>Kéo thả thư mục ảnh và bấm <b>"Ghép Ảnh"</b> để xem trước toàn cảnh siêu phân giải.</p>
+                        <h3>OmniStitch DeepZoom Viewer</h3>
+                        <p>Drag & drop an image folder and click <b>"Stitch Preview"</b> to view gigapixel mosaics.</p>
                     </div>
                 </div>
 
@@ -365,8 +365,8 @@
                     <!-- Pinned / Active Region Box with resize handles -->
                     <div class="active-region-box" id="activeRegionBox" style="display: none;">
                         <div class="region-box-header" id="regionBoxHeader">
-                            <span class="region-box-title" id="regionBoxTitle">📌 Vùng Soi: 256×256 px</span>
-                            <button class="region-box-close" id="btnCloseRegionBox" title="Xóa vùng chọn"><i class="fa-solid fa-xmark"></i></button>
+                            <span class="region-box-title" id="regionBoxTitle">📌 Inspected Region: 256×256 px</span>
+                            <button class="region-box-close" id="btnCloseRegionBox" title="Clear selected region"><i class="fa-solid fa-xmark"></i></button>
                         </div>
                         <div class="region-handle handle-tl" data-handle="tl"></div>
                         <div class="region-handle handle-tr" data-handle="tr"></div>
@@ -381,48 +381,48 @@
                 <div class="inspector-header">
                     <div class="inspector-title">
                         <i class="fa-solid fa-microscope text-cyan"></i>
-                        <h3>Bộ Công Cụ Tinh Chỉnh & Soi Nét</h3>
+                        <h3>Clarity Inspector & Fine-Tuning</h3>
                     </div>
-                    <button class="btn-icon" id="btnCloseInspector" title="Thu gọn bảng"><i class="fa-solid fa-chevron-right"></i></button>
+                    <button class="btn-icon" id="btnCloseInspector" title="Collapse panel"><i class="fa-solid fa-chevron-right"></i></button>
                 </div>
 
                 <!-- Inspector Controls Bar -->
                 <div class="inspector-toolbar">
                     <div class="inspector-status-banner" id="inspectorStatusBanner">
                         <i class="fa-solid fa-circle-info text-cyan"></i>
-                        <span id="inspectorStatusText">Chọn công cụ theo mục đích bên dưới:</span>
+                        <span id="inspectorStatusText">Select an inspection tool below:</span>
                     </div>
 
-                    <!-- Nút Chọn / Di Chuyển Chuột Chung -->
+                    <!-- Select / Move Tool Button -->
                     <div class="tool-section-card select-mode-card" id="cardSelectMode">
-                        <button class="tool-pill full-width-pill active" data-tool="select" id="btnToolSelectMode" title="Chọn và di chuyển, xoay, chỉnh sửa từng ảnh">
-                            <i class="fa-solid fa-arrow-pointer"></i> <b>↖️ Chế độ Chọn & Sửa Ảnh</b>
+                        <button class="tool-pill full-width-pill active" data-tool="select" id="btnToolSelectMode" title="Select, move, rotate, and transform layers">
+                            <i class="fa-solid fa-arrow-pointer"></i> <b>↖️ Select & Transform Mode</b>
                         </button>
                     </div>
 
-                    <!-- KHỐI 1: SOI & CHỌN VÙNG NÉT (ACCORDION) -->
+                    <!-- SECTION 1: CLARITY INSPECTOR (ACCORDION) -->
                     <div class="tool-section-card clarity-section-card" data-accordion-card="clarity">
-                        <div class="tool-section-header accordion-header" data-accordion-target="clarity" title="Nhấn để mở / thu gọn công cụ Soi Nét">
+                        <div class="tool-section-header accordion-header" data-accordion-target="clarity" title="Click to toggle Clarity Inspector">
                             <div class="accordion-header-left">
                                 <i class="fa-solid fa-magnifying-glass-chart text-cyan"></i>
-                                <span class="tool-section-title">1. Soi Vùng Nét</span>
+                                <span class="tool-section-title">1. Clarity Inspector</span>
                             </div>
                             <div class="accordion-header-right">
-                                <span class="accordion-badge" id="badgeClaritySummary">Chữ nhật · 256px</span>
+                                <span class="accordion-badge" id="badgeClaritySummary">Rectangle · 256px</span>
                                 <i class="fa-solid fa-chevron-down accordion-arrow"></i>
                             </div>
                         </div>
                         <div class="tool-section-body" id="bodyClarity">
-                            <p class="tool-section-desc">Khoanh vùng mô bị mờ để hệ thống quét các ảnh chụp trong thư mục và lấy góc chụp nét nhất.</p>
+                            <p class="tool-section-desc">Select any blurry or cloudy region to rank candidate patches by sharpness.</p>
                             <div class="tool-pills-grid" id="clarityToolPills">
-                                <button class="tool-pill" data-tool="rect" title="Kéo hộp chữ nhật"><i class="fa-regular fa-square"></i> Chữ nhật</button>
-                                <button class="tool-pill" data-tool="polygon" title="Click các đỉnh đa giác, click điểm đầu để khép kín"><i class="fa-solid fa-draw-polygon"></i> Đa giác</button>
-                                <button class="tool-pill" data-tool="lasso" title="Nhấn giữ và vẽ tự do quanh vùng"><i class="fa-solid fa-bezier-curve"></i> Tự do (Lasso)</button>
+                                <button class="tool-pill" data-tool="rect" title="Drag rectangle box"><i class="fa-regular fa-square"></i> Rectangle</button>
+                                <button class="tool-pill" data-tool="polygon" title="Click polygon vertices, click start point to close"><i class="fa-solid fa-draw-polygon"></i> Polygon</button>
+                                <button class="tool-pill" data-tool="lasso" title="Hold and draw freehand"><i class="fa-solid fa-bezier-curve"></i> Freehand (Lasso)</button>
                             </div>
                             <!-- Quick Size Presets cho Rectangle -->
                             <div class="inspector-control-group mt-1" id="rectPresetGroup">
                                 <div class="adjust-label-row">
-                                    <span><i class="fa-solid fa-vector-square"></i> Cỡ vùng chữ nhật mẫu:</span>
+                                    <span><i class="fa-solid fa-vector-square"></i> Preset box dimensions:</span>
                                 </div>
                                 <div class="pill-group" id="regionSizePills">
                                     <button class="pill-btn" data-size="128">128px</button>
@@ -433,28 +433,28 @@
                         </div>
                     </div>
 
-                    <!-- KHỐI 2: CỌ TÀNG HÌNH & KHÔI PHỤC NỀN (ACCORDION) -->
+                    <!-- SECTION 2: INVISIBLE ALPHA BRUSH (ACCORDION) -->
                     <div class="tool-section-card brush-section-card" data-accordion-card="brush">
-                        <div class="tool-section-header accordion-header" data-accordion-target="brush" title="Nhấn để mở / thu gọn công cụ Cọ Tàng Hình">
+                        <div class="tool-section-header accordion-header" data-accordion-target="brush" title="Click to toggle Invisible Alpha Brush">
                             <div class="accordion-header-left">
                                 <i class="fa-solid fa-wand-magic text-danger"></i>
-                                <span class="tool-section-title">2. Cọ Tàng Hình</span>
+                                <span class="tool-section-title">2. Invisible Brush (Alpha Mask)</span>
                             </div>
                             <div class="accordion-header-right">
-                                <span class="accordion-badge" id="badgeBrushSummary">Cọ 24px</span>
+                                <span class="accordion-badge" id="badgeBrushSummary">🔴 Erase · 24 px</span>
                                 <i class="fa-solid fa-chevron-down accordion-arrow"></i>
                             </div>
                         </div>
                         <div class="tool-section-body" id="bodyBrush">
-                            <p class="tool-section-desc">Tô để xóa bọt khí, vết bẩn hoặc nền thừa về tàng hình (Alpha = 0) hoặc phục hồi lại.</p>
+                            <p class="tool-section-desc">Paint to erase artifacts, air bubbles, or clouds to transparent alpha (Alpha = 0) or restore them.</p>
                             <div class="tool-pills-grid" id="brushToolPills">
-                                <button class="tool-pill pill-danger" data-tool="brush_exclude" title="Tô cọ xóa nền/chi tiết thừa về tàng hình"><i class="fa-solid fa-paintbrush text-danger"></i> 🔴 Cọ Xóa</button>
-                                <button class="tool-pill pill-teal" data-tool="brush_restore" title="Tô cọ khôi phục vùng xóa"><i class="fa-solid fa-rotate-left text-teal"></i> 🟢 Phục Hồi</button>
+                                <button class="tool-pill pill-danger" data-tool="brush_exclude" title="Erase artifacts to transparent alpha"><i class="fa-solid fa-paintbrush text-danger"></i> 🔴 Erase Brush</button>
+                                <button class="tool-pill pill-teal" data-tool="brush_restore" title="Restore painted regions"><i class="fa-solid fa-rotate-left text-teal"></i> 🟢 Restore Brush</button>
                             </div>
                             <!-- Brush Controls -->
                             <div class="inspector-control-group mt-1" id="brushControlsGroup">
                                 <div class="adjust-label-row">
-                                    <span><i class="fa-solid fa-circle-dot"></i> Cỡ cọ:</span>
+                                    <span><i class="fa-solid fa-circle-dot"></i> Brush radius:</span>
                                     <span class="adjust-val" id="valBrushRadius">24 px</span>
                                 </div>
                                 <input type="range" id="sliderBrushRadius" min="4" max="150" step="2" value="24">
@@ -464,38 +464,38 @@
                                     <button class="pill-btn-sm" data-brush="64">64px</button>
                                     <button class="pill-btn-sm" data-brush="120">120px</button>
                                 </div>
-                                <button class="btn-xs text-danger mt-1" id="btnClearAllStrokes" style="align-self: flex-end;"><i class="fa-solid fa-trash"></i> Xóa nét cọ</button>
+                                <button class="btn-xs text-danger mt-1" id="btnClearAllStrokes" style="align-self: flex-end;"><i class="fa-solid fa-trash"></i> Clear Strokes</button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- KHỐI 3: CẮT TOÀN BỘ ẢNH GHÉP (ACCORDION) -->
+                    <!-- SECTION 3: CROP MOSAIC (ACCORDION) -->
                     <div class="tool-section-card crop-section-card" data-accordion-card="crop">
-                        <div class="tool-section-header accordion-header" data-accordion-target="crop" title="Nhấn để mở / thu gọn công cụ Cắt Khung">
+                        <div class="tool-section-header accordion-header" data-accordion-target="crop" title="Click to toggle Crop tool">
                             <div class="accordion-header-left">
                                 <i class="fa-solid fa-crop text-warning"></i>
-                                <span class="tool-section-title">3. Cắt Khung (Crop)</span>
+                                <span class="tool-section-title">3. Crop Viewport</span>
                             </div>
                             <div class="accordion-header-right">
-                                <span class="accordion-badge" id="badgeCropSummary">Chữ nhật</span>
+                                <span class="accordion-badge" id="badgeCropSummary">Rectangle</span>
                                 <i class="fa-solid fa-chevron-down accordion-arrow"></i>
                             </div>
                         </div>
                         <div class="tool-section-body" id="bodyCrop">
-                            <p class="tool-section-desc">Khoanh vùng giới hạn cho toàn bộ bức ảnh WSI cuối cùng, phần ngoài sẽ bị loại bỏ.</p>
+                            <p class="tool-section-desc">Define a boundary box for the final stitched mosaic. Regions outside are trimmed.</p>
                             <div class="tool-pills-grid" id="cropToolPills">
-                                <button class="tool-pill pill-warning" data-tool="crop" title="Kéo khung chữ nhật"><i class="fa-regular fa-square"></i> Chữ nhật</button>
-                                <button class="tool-pill pill-warning" data-tool="crop_polygon" title="Click các đỉnh crop"><i class="fa-solid fa-draw-polygon"></i> Đa giác</button>
-                                <button class="tool-pill pill-warning" data-tool="crop_lasso" title="Vẽ tự do crop"><i class="fa-solid fa-bezier-curve"></i> Lasso</button>
+                                <button class="tool-pill pill-warning" data-tool="crop" title="Drag rectangle bounding box"><i class="fa-regular fa-square"></i> Rectangle</button>
+                                <button class="tool-pill pill-warning" data-tool="crop_polygon" title="Click polygon vertices"><i class="fa-solid fa-draw-polygon"></i> Polygon</button>
+                                <button class="tool-pill pill-warning" data-tool="crop_lasso" title="Draw freehand contour"><i class="fa-solid fa-bezier-curve"></i> Lasso</button>
                             </div>
                             <div class="inspector-control-group mt-1" id="cropControlsGroup">
                                 <label class="form-checkbox-label">
                                     <input type="checkbox" id="chkTrimOutputBounds" checked>
-                                    <span>Cắt gọn kích thước file xuất</span>
+                                    <span>Trim exported file dimensions</span>
                                 </label>
                                 <div class="btn-group-row mt-1">
-                                    <button class="btn-sm btn-primary" id="btnApplyCrop"><i class="fa-solid fa-check"></i> Cắt</button>
-                                    <button class="btn-sm btn-outline" id="btnCancelCrop"><i class="fa-solid fa-ban"></i> Hủy</button>
+                                    <button class="btn-sm btn-primary" id="btnApplyCrop"><i class="fa-solid fa-check"></i> Apply Crop</button>
+                                    <button class="btn-sm btn-outline" id="btnCancelCrop"><i class="fa-solid fa-ban"></i> Cancel</button>
                                     <button class="btn-sm btn-outline" id="btnResetCrop"><i class="fa-solid fa-rotate-left"></i> Reset</button>
                                 </div>
                             </div>
@@ -505,15 +505,15 @@
 
                 <!-- Pin Info & Actions -->
                 <div class="inspector-pin-bar" id="inspectorPinBar" style="display: none;">
-                    <span class="pin-badge" id="inspectorPinCoords"><i class="fa-solid fa-vector-square"></i> Vùng: 256×256 px</span>
-                    <button class="btn-sm btn-outline" id="btnUnpinInspector" title="Bỏ chọn vùng"><i class="fa-solid fa-xmark"></i> Bỏ chọn</button>
+                    <span class="pin-badge" id="inspectorPinCoords"><i class="fa-solid fa-vector-square"></i> Region: 256×256 px</span>
+                    <button class="btn-sm btn-outline" id="btnUnpinInspector" title="Deselect region"><i class="fa-solid fa-xmark"></i> Deselect</button>
                 </div>
 
                 <!-- Patches List (Candidate overlapping layers at point) -->
                 <div class="inspector-patches-container" id="inspectorPatchesContainer">
                     <div class="empty-state-sm" id="inspectorEmptyState">
                         <i class="fa-solid fa-crosshairs text-cyan"></i>
-                        <p>Chưa có vùng soi nét.<br>Hãy chọn <b>Chữ nhật</b>, <b>Đa giác</b> hoặc <b>Lasso</b> ở Khối 1 rồi khoanh vùng trên hình.</p>
+                        <p>No inspected region yet.<br>Choose <b>Rectangle</b>, <b>Polygon</b>, or <b>Lasso</b> above to inspect clarity.</p>
                     </div>
                     <div class="patches-list" id="inspectorPatchesList" style="display: none;"></div>
                 </div>
@@ -521,39 +521,39 @@
                 <!-- Applied Focus Regions Section -->
                 <div class="focus-regions-section" id="focusRegionsSection">
                     <div class="focus-regions-header">
-                        <span class="section-subtitle"><i class="fa-solid fa-star text-warning"></i> Các vùng nét đã gán (<span id="focusRegionCount">0</span>):</span>
-                        <button class="btn-xs text-danger" id="btnClearAllFocusRegions" title="Xóa tất cả vùng đã gán"><i class="fa-solid fa-trash"></i> Xóa hết</button>
+                        <span class="section-subtitle"><i class="fa-solid fa-star text-warning"></i> Applied Focus Regions (<span id="focusRegionCount">0</span>):</span>
+                        <button class="btn-xs text-danger" id="btnClearAllFocusRegions" title="Clear all focus regions"><i class="fa-solid fa-trash"></i> Clear All</button>
                     </div>
                     <div class="focus-regions-list" id="focusRegionsList">
-                        <div class="empty-hint">Chưa gán vùng nét nào</div>
+                        <div class="empty-hint">No focus regions applied yet</div>
                     </div>
                 </div>
                 <!-- Mask Regions Section -->
                 <div class="focus-regions-section" id="exclusionStrokesSection">
                     <div class="focus-regions-header">
-                        <span class="section-subtitle"><i class="fa-solid fa-eraser text-danger"></i> Mask vùng (<span id="exclusionStrokeCount">0</span>)</span>
+                        <span class="section-subtitle"><i class="fa-solid fa-eraser text-danger"></i> Mask Regions (<span id="exclusionStrokeCount">0</span>)</span>
                     </div>
                     <div class="focus-regions-list" id="maskRegionsList"></div>
                 </div>
                 <div class="region-batch-panel" id="regionBatchPanel">
-                    <div class="region-batch-summary"><span id="selectedRegionCount">0 vùng được chọn</span></div>
+                    <div class="region-batch-summary"><span id="selectedRegionCount">0 regions selected</span></div>
                     <div class="region-batch-row">
-                        <select class="form-select compact-select" id="batchFocusLayerSelect" title="Layer nét áp dụng cho các FocusRegion đã chọn"></select>
-                        <button class="btn-xs" id="btnBatchApplyLayer" title="Gán layer cho các vùng nét đã chọn"><i class="fa-solid fa-image"></i> Gán ảnh</button>
+                        <select class="form-select compact-select" id="batchFocusLayerSelect" title="Focus layer to apply to selected regions"></select>
+                        <button class="btn-xs" id="btnBatchApplyLayer" title="Assign layer to selected regions"><i class="fa-solid fa-image"></i> Apply Layer</button>
                     </div>
                     <div class="region-batch-row">
-                        <select class="form-select compact-select" id="batchMaskOperation" title="Đổi thao tác mask đã chọn">
+                        <select class="form-select compact-select" id="batchMaskOperation" title="Change mask operation">
                             <option value="exclude">Exclude</option>
                             <option value="restore">Restore</option>
                         </select>
-                        <button class="btn-xs" id="btnBatchMaskOperation">Đổi mask</button>
+                        <button class="btn-xs" id="btnBatchMaskOperation">Update Mask</button>
                     </div>
                     <div class="region-batch-actions">
-                        <button class="btn-xs" id="btnBatchLock"><i class="fa-solid fa-lock"></i> Khóa</button>
-                        <button class="btn-xs" id="btnBatchUnlock"><i class="fa-solid fa-lock-open"></i> Mở</button>
+                        <button class="btn-xs" id="btnBatchLock"><i class="fa-solid fa-lock"></i> Lock</button>
+                        <button class="btn-xs" id="btnBatchUnlock"><i class="fa-solid fa-lock-open"></i> Unlock</button>
                         <button class="btn-xs" id="btnGroupRegions"><i class="fa-solid fa-object-group"></i> Group</button>
                         <button class="btn-xs" id="btnUngroupRegions"><i class="fa-solid fa-object-ungroup"></i> Ungroup</button>
-                        <button class="btn-xs" id="btnBatchDelete"><i class="fa-solid fa-trash"></i> Xóa</button>
+                        <button class="btn-xs" id="btnBatchDelete"><i class="fa-solid fa-trash"></i> Delete</button>
                     </div>
                 </div>
             </aside>
@@ -562,81 +562,81 @@
     </div>
 
     <div class="autosave-conflict-banner" id="autosaveConflictBanner" style="display: none;">
-        <span><i class="fa-solid fa-triangle-exclamation"></i> Project đã thay đổi trên server. Bản cục bộ vẫn được giữ và chưa bị đánh dấu đã lưu.</span>
-        <button class="btn-sm" id="btnRetryAutosave">Thử lưu lại</button>
-        <button class="btn-icon" id="btnDismissAutosaveConflict" title="Ẩn cảnh báo"><i class="fa-solid fa-xmark"></i></button>
+        <span><i class="fa-solid fa-triangle-exclamation"></i> Project was modified on server. Local draft retained.</span>
+        <button class="btn-sm" id="btnRetryAutosave">Retry Save</button>
+        <button class="btn-icon" id="btnDismissAutosaveConflict" title="Dismiss alert"><i class="fa-solid fa-xmark"></i></button>
     </div>
 
-    <!-- Modal: Chọn Chỗ Lưu & Tải Ảnh Kết Quả -->
+    <!-- Modal: Export & Download Mosaic -->
     <div class="modal-backdrop" id="saveModalBackdrop" style="display: none;">
         <div class="save-modal-card">
             <div class="modal-header">
                 <div class="modal-title">
                     <i class="fa-solid fa-floppy-disk text-gradient"></i>
-                    <h3>Lưu & Xuất Ảnh Toàn Cảnh (WSI)</h3>
+                    <h3>Export Gigapixel Mosaic</h3>
                 </div>
-                <button class="btn-icon" id="btnCloseSaveModal" title="Đóng"><i class="fa-solid fa-xmark"></i></button>
+                <button class="btn-icon" id="btnCloseSaveModal" title="Close"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <!-- Tên file -->
+                <!-- Export File Name -->
                 <div class="form-group">
-                    <label class="form-label"><i class="fa-solid fa-file-signature"></i> Tên file kết xuất:</label>
+                    <label class="form-label"><i class="fa-solid fa-file-signature"></i> Export file name:</label>
                     <div class="input-group">
-                        <input type="text" id="modalInputFileName" class="form-input" placeholder="Ví dụ: 2586A hoặc KetQuaGhep_Mau1">
+                        <input type="text" id="modalInputFileName" class="form-input" placeholder="e.g., slide_sample_01 or mosaic_final">
                     </div>
                 </div>
 
-                <!-- Định dạng xuất -->
+                <!-- Output Format -->
                 <div class="form-group">
-                    <label class="form-label"><i class="fa-solid fa-file-code"></i> Định dạng file:</label>
+                    <label class="form-label"><i class="fa-solid fa-file-code"></i> Output format:</label>
                     <div class="select-wrapper">
                         <select id="modalSelectFormat" class="form-select">
-                            <option value="tif" selected>TIFF / BigTIFF (.tif - Chuẩn hiển vi siêu nét)</option>
-                            <option value="png">PNG (.png - Lossless)</option>
-                            <option value="jpg">JPEG (.jpg - Nhẹ, chia sẻ nhanh)</option>
+                            <option value="tif" selected>TIFF / BigTIFF (.tif - Ultra-resolution & GIS)</option>
+                            <option value="png">PNG (.png - Lossless quality)</option>
+                            <option value="jpg">JPEG (.jpg - Lightweight for web)</option>
                         </select>
                     </div>
                 </div>
 
-                <!-- Thư mục đích trên máy tính / server -->
+                <!-- Destination Directory -->
                 <div class="form-group">
-                    <label class="form-label"><i class="fa-solid fa-folder-open"></i> Thư mục đích lưu trên máy:</label>
+                    <label class="form-label"><i class="fa-solid fa-folder-open"></i> Destination directory:</label>
                     <div class="input-group">
-                        <input type="text" id="modalInputTargetDir" class="form-input" value="data/result" placeholder="Ví dụ: data/result hoặc D:/KetQuaWSI">
+                        <input type="text" id="modalInputTargetDir" class="form-input" value="data/result" placeholder="e.g., data/result or D:/ExportedMosaics">
                     </div>
-                    <span class="form-hint">Bạn có thể nhập bất kỳ đường dẫn thư mục nào trên ổ cứng (C:, D:,...).</span>
+                    <span class="form-hint">You can enter any valid directory path on your storage drive.</span>
                 </div>
 
-                <!-- Preview đường dẫn đích -->
+                <!-- Destination Preview -->
                 <div class="output-preview-banner mt-2">
                     <div class="banner-item">
-                        <span class="label">Đường dẫn đầy đủ:</span>
+                        <span class="label">Full export path:</span>
                         <span class="val code highlight" id="modalFullTargetPathPreview">data/result/2586A.tif</span>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline" id="btnCancelSaveModal">Hủy bỏ</button>
-                <button class="btn btn-sm btn-outline" id="btnDirectBrowserDownload" title="Tải về máy tính qua trình duyệt">
-                    <i class="fa-solid fa-download"></i> Tải Về Máy
+                <button class="btn btn-outline" id="btnCancelSaveModal">Cancel</button>
+                <button class="btn btn-sm btn-outline" id="btnDirectBrowserDownload" title="Download via browser">
+                    <i class="fa-solid fa-download"></i> Direct Download
                 </button>
                 <button class="btn btn-success" id="btnConfirmSave">
-                    <i class="fa-solid fa-floppy-disk"></i> Xác Nhận Lưu
+                    <i class="fa-solid fa-floppy-disk"></i> Confirm Export
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Modal: Soi Phóng To & So Sánh Ảnh Chi Tiết (Patch Clarity Lightbox) -->
+    <!-- Modal: Patch Clarity Lightbox -->
     <div class="modal-backdrop" id="patchPreviewModal" style="display: none;">
         <div class="patch-modal-card">
             <div class="modal-header">
                 <div class="modal-title">
                     <i class="fa-solid fa-magnifying-glass-plus text-cyan"></i>
-                    <h3 id="patchModalTitle">Chi Tiết Vùng Ảnh: 0716.tif</h3>
-                    <span class="patch-badge-status" id="patchModalBadge">⭐ NÉT NHẤT</span>
+                    <h3 id="patchModalTitle">Region Details: 0716.tif</h3>
+                    <span class="patch-badge-status" id="patchModalBadge">⭐ SHARPEST</span>
                 </div>
-                <button class="btn-icon" id="btnClosePatchModal" title="Đóng (Esc)"><i class="fa-solid fa-xmark"></i></button>
+                <button class="btn-icon" id="btnClosePatchModal" title="Close (Esc)"><i class="fa-solid fa-xmark"></i></button>
             </div>
 
             <div class="patch-modal-body">
@@ -644,9 +644,9 @@
                 <div class="patch-viewer-wrapper" id="patchViewerWrapper">
                     <img id="patchModalImage" src="" alt="Patch Preview" draggable="false">
                     <div class="patch-viewer-controls">
-                        <button class="btn-icon-sm" id="btnPatchZoomIn" title="Phóng to (+)"><i class="fa-solid fa-plus"></i></button>
-                        <button class="btn-icon-sm" id="btnPatchZoomOut" title="Thu nhỏ (-)"><i class="fa-solid fa-minus"></i></button>
-                        <button class="btn-icon-sm" id="btnPatchZoomReset" title="Đặt lại (100%)"><i class="fa-solid fa-rotate-left"></i></button>
+                        <button class="btn-icon-sm" id="btnPatchZoomIn" title="Zoom In (+)"><i class="fa-solid fa-plus"></i></button>
+                        <button class="btn-icon-sm" id="btnPatchZoomOut" title="Zoom Out (-)"><i class="fa-solid fa-minus"></i></button>
+                        <button class="btn-icon-sm" id="btnPatchZoomReset" title="Reset Zoom (100%)"><i class="fa-solid fa-rotate-left"></i></button>
                     </div>
                 </div>
 
@@ -654,29 +654,29 @@
                 <div class="patch-modal-sidebar">
                     <div class="patch-metrics-panel">
                         <div class="metric-row">
-                            <span class="metric-label"><i class="fa-solid fa-chart-line"></i> Điểm độ nét:</span>
+                            <span class="metric-label"><i class="fa-solid fa-chart-line"></i> Sharpness Score:</span>
                             <span class="metric-number text-cyan" id="patchModalSharpness">5,517.35</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label"><i class="fa-solid fa-draw-polygon"></i> Độ bao phủ:</span>
+                            <span class="metric-label"><i class="fa-solid fa-draw-polygon"></i> Area Coverage:</span>
                             <span class="metric-number text-success" id="patchModalCoverage">71%</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label"><i class="fa-solid fa-vector-square"></i> Kích thước vùng:</span>
+                            <span class="metric-label"><i class="fa-solid fa-vector-square"></i> Region Dimensions:</span>
                             <span class="metric-number" id="patchModalDimensions">1790 × 1206 px</span>
                         </div>
                     </div>
 
                     <!-- Comparison Tabs (List all overlapping layers) -->
                     <div class="patch-compare-section">
-                        <label class="form-label-xs"><i class="fa-solid fa-layer-group"></i> Chọn ảnh khác ở cùng vùng này để so sánh:</label>
+                        <label class="form-label-xs"><i class="fa-solid fa-layer-group"></i> Select other overlapping slices to compare:</label>
                         <div class="patch-compare-list" id="patchModalCompareList"></div>
                     </div>
 
                     <!-- Action Button -->
                     <div class="patch-modal-actions">
                         <button class="btn btn-success btn-block" id="btnPatchModalApply">
-                            <i class="fa-solid fa-check"></i> Dùng Ảnh Này Cho Vùng
+                            <i class="fa-solid fa-check"></i> Apply This Slice to Region
                         </button>
                     </div>
                 </div>

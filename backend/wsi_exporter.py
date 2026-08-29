@@ -1,6 +1,6 @@
-# Chức năng: Xuất ảnh WSI độ phân giải cao đúng định dạng đầu vào & Cắt Pyramid DeepZoom (DZI)
-# Lí do tạo: Bảo toàn đối xứng định dạng và phục vụ xem ảnh WSI khổng lồ mượt mà trên trình duyệt
-# Đường dẫn: tool/image_alignment/backend/wsi_exporter.py
+# Feature: Exports high-resolution mosaics and generates DeepZoom pyramids (DZI)
+# Purpose: Bảo toàn đối xứng định dạng và phục vụ xem ảnh WSI khổng lồ mượt mà trên trình duyệt
+# Path: tool/image_alignment/backend/wsi_exporter.py
 
 import os
 import math
@@ -41,7 +41,7 @@ def _publication_lock(output_dir, timeout=30.0):
                     break
                 except OSError as exc:
                     if exc.errno not in (errno.EACCES, errno.EDEADLK, errno.EAGAIN) or time.monotonic() >= deadline:
-                        raise TimeoutError("Không thể khóa thư mục publication") from exc
+                        raise TimeoutError("Unable to lock publication directory") from exc
                     time.sleep(0.05)
         else:
             import fcntl
@@ -259,7 +259,7 @@ def generate_dzi_pyramid_bounded(
 ):
     """Generate DZI while keeping only one tile/downsample chunk resident in memory."""
     if tile_size < 1 or tile_size > 4096 or tile_overlap < 0 or tile_overlap > 16:
-        raise ValueError("Thông số DZI không hợp lệ")
+        raise ValueError("Thông số DZI is invalid")
     height, width = image_data.shape[:2]
     channels = image_data.shape[2] if image_data.ndim == 3 else 1
     tile_format = 'png' if channels == 4 else 'jpg'
@@ -414,14 +414,16 @@ def export_wsi_multiformat(image_data, output_dir, folder_name="stitched_wsi", t
     """
     os.makedirs(output_dir, exist_ok=True)
     if not folder_name or os.path.basename(folder_name) != folder_name:
-        raise ValueError("Tên output không hợp lệ")
+        raise ValueError("Invalid output file name")
     target_ext = target_ext.lower().lstrip('.')
+    if target_ext == 'dzi':
+        target_ext = 'tif'
     if target_ext not in ('tif', 'tiff', 'png', 'jpg', 'jpeg', 'bmp'):
-        raise ValueError("Định dạng output không hợp lệ")
+        raise ValueError("Invalid output format")
     if valid_mask is not None and valid_mask.shape[:2] != image_data.shape[:2]:
-        raise ValueError("Companion mask phải cùng kích thước output")
+        raise ValueError("Companion mask must match output dimensions")
     if target_ext == 'png' and image_data.shape[0] * image_data.shape[1] > 268_435_456:
-        raise ValueError("PNG output vượt giới hạn pixel; hãy dùng BigTIFF")
+        raise ValueError("PNG output exceeds pixel threshold; use BigTIFF")
 
     file_name = f"{folder_name}.{target_ext}"
     output_path = os.path.join(output_dir, file_name)

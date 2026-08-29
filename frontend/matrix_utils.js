@@ -1,13 +1,13 @@
 /**
- * Chức năng: Tiện ích tính toán Ma Trận 3x3 và Chuyển Đổi Tọa Độ (Row-major)
- * Lí do tạo: Đảm bảo độ chính xác hình học giữa Source Pixel, Canvas World và Viewport
- * Đường dẫn: tool/image_alignment/frontend/matrix_utils.js
+ * Feature: 3x3 Matrix calculation and coordinate transform utilities (Row-major)
+ * Purpose: Maintains sub-pixel geometric accuracy across Source Pixel, Canvas World, and Viewport coordinates
+ * Path: tool/image_alignment/frontend/matrix_utils.js
  */
 
 const MatrixUtils = (function () {
     'use strict';
 
-    // Tạo ma trận đơn vị 3x3: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+    // Create identity 3x3 matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1]
     function identity() {
         return [
             1.0, 0.0, 0.0,
@@ -16,7 +16,7 @@ const MatrixUtils = (function () {
         ];
     }
 
-    // Ma trận tịnh tiến (Translate)
+    // Translation matrix
     function translate(tx, ty) {
         return [
             1.0, 0.0, Number(tx),

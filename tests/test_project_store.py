@@ -30,18 +30,18 @@ class TestProjectStore(unittest.TestCase):
         layer = ProjectLayer("l1", "s1", 100, 100, sourceToWorld=matrix_translate(10, 20))
         proj = ProjectState("test_proj_1", revision=1, layers=[layer])
         
-        # Save lần 1
+        # Initial save
         res1 = save_project(proj)
         self.assertEqual(res1["status"], "success")
         self.assertEqual(res1["revision"], 2)
         
-        # Load lại
+        # Reload project
         loaded = load_project("test_proj_1")
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.revision, 2)
         self.assertEqual(len(loaded.layers), 1)
 
-        # Thử lưu với revision cũ hơn -> Conflict
+        # Attempt saving with stale revision -> Conflict
         old_proj = ProjectState("test_proj_1", revision=1, layers=[layer])
         res_conflict = save_project(old_proj)
         self.assertEqual(res_conflict["status"], "conflict")

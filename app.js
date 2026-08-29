@@ -1,11 +1,11 @@
-// Chức năng: Logic điều khiển toàn bộ WSI Stitching Studio & Canva Manual Editor
-// Lí do tạo: Đồng bộ 2 chiều Auto <-> Manual, bảo toàn 100% trạng thái, quản lý layers, color adjustments và xuất file WSI
-// Đường dẫn: tool/image_alignment/app.js
+// Feature: Studio controller logic for OmniStitch Studio & Canvas Editor
+// Purpose: Bidirectional sync between Auto and Manual modes, layer management, and export pipeline
+// Path: app.js
 
 (function () {
     'use strict';
 
-    // State cục bộ của UI
+    // UI Local State
     const uiState = {
         isStitching: false,
         isUploading: false,
@@ -215,7 +215,7 @@
         btnPatchModalApply: document.getElementById('btnPatchModalApply')
     };
 
-    // State của Bộ Soi Điểm Ảnh (Patch Clarity Inspector)
+    // Patch Clarity Inspector State
     const inspectorState = {
         isEnabled: false,
         isPinned: false,
@@ -230,11 +230,11 @@
         lastPatches: []
     };
 
-    // Biến lưu trữ đường dẫn preview hiện tại
+    // Current preview path variable
     let currentPreviewFile = null;
 
     // ==========================================
-    // 0. Modal Chọn Chỗ Lưu & Tải Ảnh
+    // 0. Export Modal Handler
     // ==========================================
     function openSaveModal() {
         const state = ProjectStore.getState();
@@ -265,7 +265,7 @@
         const targetDir = DOM.modalInputTargetDir.value.trim() || 'data/result';
         const exportFormat = DOM.modalSelectFormat.value || 'tif';
 
-        setStatus('busy', 'Đang lưu ảnh vào thư mục đích...');
+        setStatus('busy', 'Saving mosaic to destination directory...');
         closeSaveModal();
 
         try {
@@ -282,15 +282,15 @@
 
             const data = await res.json();
             if (data.status === 'success') {
-                setStatus('ready', 'Đã lưu thành công!');
-                alert(`✅ ĐÃ LƯU ẢNH THÀNH CÔNG!\n\n📁 Thư mục: ${data.folder}\n📄 Tên file: ${data.fileName}\n📍 Đường dẫn đầy đủ: ${data.savedPath}`);
+                setStatus('ready', 'Saved successfully!');
+                alert(`✅ MOSAIC SAVED SUCCESSFULLY!\n\n📁 Directory: ${data.folder}\n📄 File: ${data.fileName}\n📍 Full Path: ${data.savedPath}`);
             } else {
-                setStatus('ready', 'Lỗi lưu ảnh');
-                alert("❌ Lỗi: " + (data.error || "Không thể lưu file"));
+                setStatus('ready', 'Error saving mosaic');
+                alert("❌ Error: " + (data.error || "Unable to save file"));
             }
         } catch (err) {
-            setStatus('ready', 'Lỗi kết nối');
-            alert("❌ Lỗi kết nối máy chủ: " + err.message);
+            setStatus('ready', 'Connection error');
+            alert("❌ Server connection error: " + err.message);
         }
     }
 
@@ -310,7 +310,7 @@
     }
 
     // ==========================================
-    // 1. Chuyển Đổi Chế Độ Auto <-> Manual (Bảo toàn 100% State)
+    // 1. Mode Switching: Auto <-> Manual (100% State Preservation)
     // ==========================================
     function setAppMode(mode) {
         ProjectStore.setMode(mode);
@@ -321,8 +321,8 @@
             DOM.viewDeepZoom.classList.add('active');
             DOM.viewManualCanvas.classList.remove('active');
             DOM.manualToolbar.style.display = 'none';
-            DOM.viewportCurrentModeLabel.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Chế Độ: <b>Ghép Tự Động WSI</b>';
-            DOM.btnStitchText.textContent = 'Ghép Ảnh Tự Động';
+            DOM.viewportCurrentModeLabel.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Mode: <b>Auto Stitching (DZI)</b>';
+            DOM.btnStitchText.textContent = 'Auto Stitch';
             DOM.btnRunStitching.className = 'btn btn-primary';
             if (DOM.autoViewerToolbar) DOM.autoViewerToolbar.style.display = 'flex';
         } else {
@@ -331,12 +331,12 @@
             DOM.viewDeepZoom.classList.remove('active');
             DOM.viewManualCanvas.classList.add('active');
             DOM.manualToolbar.style.display = 'flex';
-            DOM.viewportCurrentModeLabel.innerHTML = '<i class="fa-solid fa-palette"></i> Chế Độ: <b>Ghép Thủ Công (Canva Studio)</b>';
-            DOM.btnStitchText.textContent = 'Xuất Ảnh Thủ Công';
+            DOM.viewportCurrentModeLabel.innerHTML = '<i class="fa-solid fa-palette"></i> Mode: <b>Manual Canvas Editor</b>';
+            DOM.btnStitchText.textContent = 'Manual Export';
             DOM.btnRunStitching.className = 'btn btn-success';
             if (DOM.autoViewerToolbar) DOM.autoViewerToolbar.style.display = 'none';
 
-            // Tự động chuyển tab sang Lớp & Màu Sắc
+            // Auto-switch tab to Layers & Color
             switchSidebarTab('tab-manual-layers');
             const state = ProjectStore.getState();
             if (state.layers && state.layers.length > 0) {
@@ -370,7 +370,7 @@
     }
 
     // ==========================================
-    // 1b. Làm Mới Toàn Bộ Dự Án / Phiên Làm Việc
+    // 1b. Reset All Workspace Session
     // ==========================================
     function resetEntireState() {
         ProjectStore.newProject();
@@ -381,24 +381,24 @@
         inspectorState.lastPatches = [];
         CanvasEngine.resetSession();
 
-        // Xóa session cache
+        // Delete session cache
         try {
             localStorage.removeItem('wsi_saved_session');
         } catch (e) {}
 
-        // Ẩn các nút lưu kết quả
+        // Hide result save buttons
         if (DOM.btnSaveOutput) DOM.btnSaveOutput.style.display = 'none';
         if (DOM.resultActions) DOM.resultActions.style.display = 'none';
         currentPreviewFile = null;
 
-        // Hủy viewer cũ và hiện placeholder
+        // Destroy old viewer and display placeholder
         if (uiState.osdViewer) {
             uiState.osdViewer.destroy();
             uiState.osdViewer = null;
         }
         DOM.osdPlaceholder.style.display = 'block';
 
-        // Reset danh sách tile, layers, focus regions và tiến trình
+        // Reset tile list, layers, focus regions, and progress
         renderTileGrid();
         renderLayersList();
         renderFocusRegionsList();
@@ -406,16 +406,16 @@
         CanvasEngine.requestRender();
 
         DOM.progressPanel.style.display = 'none';
-        setStatus('ready', 'Đã làm mới, sẵn sàng nạp thư mục');
+        setStatus('ready', 'Workspace reset. Ready to load directory.');
     }
 
     // ==========================================
-    // 2. Quét Thư Mục Nguồn
+    // 2. Source Directory Scanning
     // ==========================================
     async function scanFolder(folderPath) {
         if (!folderPath || !folderPath.trim()) return;
 
-        // Dọn dẹp kết quả và nút lưu cũ
+        // Clean up previous results
         if (DOM.btnSaveOutput) DOM.btnSaveOutput.style.display = 'none';
         if (DOM.resultActions) DOM.resultActions.style.display = 'none';
         currentPreviewFile = null;
@@ -425,7 +425,7 @@
         }
         DOM.osdPlaceholder.style.display = 'block';
 
-        setStatus('busy', 'Đang nạp ảnh từ thư mục...');
+        setStatus('busy', 'Loading images from directory...');
 
         try {
             const res = await fetch('/api/scan_folder', {
@@ -443,17 +443,17 @@
                 CanvasEngine.resetSession();
                 setAppMode('auto');
 
-                // Xếp các tile theo dạng lưới ban đầu
+                // Arrange initial tiles in grid
                 const n = data.images.length;
                 const cols = Math.ceil(Math.sqrt(n));
 
-                ProjectStore.beginTransaction('Nạp thư mục ảnh', 'layer_import_batch');
+                ProjectStore.beginTransaction('Import folder images', 'layer_import_batch');
                 data.images.forEach((img, idx) => {
                     const tileW = img.width || 2000;
                     const tileH = img.height || 1500;
                     const r = Math.floor(idx / cols);
                     const c = idx % cols;
-                    const tx = c * (tileW * 0.85); // 15% overlap giả định
+                    const tx = c * (tileW * 0.85); // 15% assumed overlap
                     const ty = r * (tileH * 0.85);
 
                     ProjectStore.addLayer({
@@ -473,14 +473,14 @@
                 renderLayersList();
                 renderFocusRegionsList();
                 saveCurrentSession();
-                setStatus('ready', `Đã nạp ${data.total} ảnh từ ${data.folderName}`);
+                setStatus('ready', `Loaded ${data.total} images from ${data.folderName}`);
             } else {
-                alert("Lỗi quét thư mục: " + (data.error || "Không thể quét"));
-                setStatus('ready', 'Sẵn sàng');
+                alert("Directory scan error: " + (data.error || "Cannot scan directory"));
+                setStatus('ready', 'Ready');
             }
         } catch (err) {
-            alert("Lỗi kết nối server: " + err.message);
-            setStatus('ready', 'Sẵn sàng');
+            alert("Server connection error: " + err.message);
+            setStatus('ready', 'Ready');
         }
     }
 
@@ -488,29 +488,29 @@
         const state = ProjectStore.getState();
         const ext = DOM.cfgExportFormat.value || 'tif';
         const targetDir = (DOM.inputOutputDir ? DOM.inputOutputDir.value : 'data/result') || 'data/result';
-        if (DOM.currentFolderNameDisplay) DOM.currentFolderNameDisplay.textContent = state.folderName || 'Chưa nạp ảnh';
-        if (DOM.expectedOutputPathDisplay) DOM.expectedOutputPathDisplay.textContent = `${targetDir}/${state.folderName || '[Tên_Thư_Mục]'}.${ext}`;
+        if (DOM.currentFolderNameDisplay) DOM.currentFolderNameDisplay.textContent = state.folderName || 'No images loaded';
+        if (DOM.expectedOutputPathDisplay) DOM.expectedOutputPathDisplay.textContent = `${targetDir}/${state.folderName || '[Folder_Name]'}.${ext}`;
     }
 
     function resetImageLevelToolsUI() {
-        // 1. Reset Cắt khung (Crop)
+        // 1. Reset Crop
         ProjectStore.clearCropRegion();
         ProjectStore.cancelCropDraft();
 
-        // 2. Reset Cọ xóa (Mask/Brush)
+        // 2. Reset Mask/Brush
         ProjectStore.clearMaskRegions();
 
-        // 3. Reset Soi vùng nét (Focus Regions & Inspector)
+        // 3. Reset Focus Regions & Inspector
         ProjectStore.clearFocusRegions();
         unpinInspector();
 
-        // 4. Xóa các nét vẽ nháp trên OpenSeadragon & Canvas
+        // 4. Delete drawing drafts on OpenSeadragon & Canvas
         clearOsdDrawingDraft();
         if (typeof CanvasEngine.cancelDraft === 'function') {
             CanvasEngine.cancelDraft();
         }
 
-        // 5. Làm sạch UI bộ soi nét
+        // 5. Clean up inspector UI
         if (DOM.viewportSelectionOverlay) DOM.viewportSelectionOverlay.style.display = 'none';
         if (DOM.activeRegionBox) DOM.activeRegionBox.style.display = 'none';
         if (DOM.inspectorPatchesList) {
@@ -521,11 +521,11 @@
             DOM.inspectorEmptyState.style.display = 'block';
             DOM.inspectorEmptyState.innerHTML = `
                 <i class="fa-solid fa-crosshairs text-muted"></i>
-                <p>Đã chuyển ảnh mới. Các vùng soi nét, cọ xóa và cắt khung đã được làm mới.</p>
+                <p>Switched to new image. Focus regions, brush masks, and crop bounds have been reset.</p>
             `;
         }
         if (DOM.inspectorStatusText) {
-            DOM.inspectorStatusText.textContent = 'Đã chuyển ảnh mới: đã reset soi vùng, cọ xóa, cắt khung.';
+            DOM.inspectorStatusText.textContent = 'Switched image: reset focus regions, brush masks, and crop bounds.';
         }
 
         CanvasEngine.requestRender();
@@ -543,7 +543,7 @@
             DOM.tileGrid.innerHTML = `
                 <div class="empty-state">
                     <i class="fa-regular fa-folder-open"></i>
-                    <p>Thư mục trống hoặc không có file ảnh hợp lệ (.tif, .png, .jpg)</p>
+                    <p>Directory empty or contains no supported images (.tif, .png, .jpg)</p>
                 </div>
             `;
             updateSelectedBadge();
@@ -562,7 +562,7 @@
                 <img src="${thumbUrl}" class="tile-thumb" alt="${layer.sourceId}" loading="lazy">
                 <div class="tile-info">
                     <span class="tile-name" title="${layer.sourceId}">${layer.sourceId}</span>
-                    <span class="tile-check" title="Chọn để ghép ảnh">${layer.visible ? '<i class="fa-solid fa-circle-check"></i>' : '<i class="fa-regular fa-circle"></i>'}</span>
+                    <span class="tile-check" title="Select for stitching">${layer.visible ? '<i class="fa-solid fa-circle-check"></i>' : '<i class="fa-regular fa-circle"></i>'}</span>
                 </div>
             `;
 
@@ -575,7 +575,7 @@
                     return;
                 }
 
-                // Click vào ảnh: chọn ảnh làm việc và reset công cụ ảnh cũ
+                // Click image: activate layer and reset old tools
                 const prevId = ProjectStore.getState().selection[0];
                 if (prevId !== layer.id) {
                     resetImageLevelToolsUI();
@@ -594,22 +594,22 @@
     function updateSelectedBadge() {
         const state = ProjectStore.getState();
         const visibleCount = state.layers.filter(l => l.visible).length;
-        DOM.selectedCountBadge.textContent = `${visibleCount} / ${state.layers.length} đã chọn`;
+        DOM.selectedCountBadge.textContent = `${visibleCount} / ${state.layers.length} selected`;
     }
 
     // ==========================================
-    // 3. Quản Lý Layer List & Color Sliders (Canva Studio)
+    // 3. Manage Layer List & Color Sliders (Canvas Studio)
     // ==========================================
     function renderLayersList() {
         DOM.layersListContainer.innerHTML = '';
         const state = ProjectStore.getState();
-        const sortedLayers = [...state.layers].sort((a, b) => b.zIndex - a.zIndex); // Hiển thị layer trên cùng ở trên
+        const sortedLayers = [...state.layers].sort((a, b) => b.zIndex - a.zIndex); // Display top layer first
 
         if (sortedLayers.length === 0) {
             DOM.layersListContainer.innerHTML = `
                 <div class="empty-state">
                     <i class="fa-regular fa-images"></i>
-                    <p>Chưa có layer nào. Hãy chọn ảnh ở tab Nguồn Ảnh.</p>
+                    <p>No layers yet. Please select images in the Image Source tab.</p>
                 </div>
             `;
             return;
@@ -626,8 +626,8 @@
                 <img src="${thumbUrl}" class="layer-item-thumb" alt="${layer.sourceId}">
                 <span class="layer-item-name" title="${layer.sourceId}">${layer.sourceId}</span>
                 <div class="layer-item-icons">
-                    <i class="fa-solid ${layer.visible ? 'fa-eye' : 'fa-eye-slash'}" title="Ẩn/Hiện" data-action="toggle-visible"></i>
-                    <i class="fa-solid ${layer.locked ? 'fa-lock' : 'fa-lock-open'}" title="Khóa" data-action="toggle-lock"></i>
+                    <i class="fa-solid ${layer.visible ? 'fa-eye' : 'fa-eye-slash'}" title="Toggle Visibility" data-action="toggle-visible"></i>
+                    <i class="fa-solid ${layer.locked ? 'fa-lock' : 'fa-lock-open'}" title="Lock" data-action="toggle-lock"></i>
                 </div>
             `;
 
@@ -657,7 +657,7 @@
     function updateAdjustmentsCard() {
         const selected = ProjectStore.getSelectedLayer();
         if (!selected) {
-            DOM.adjustLayerName.textContent = 'Chưa chọn layer nào';
+            DOM.adjustLayerName.textContent = 'No layer selected';
             DOM.sliderOpacity.disabled = true;
             DOM.sliderBrightness.disabled = true;
             DOM.sliderContrast.disabled = true;
@@ -736,7 +736,7 @@
     }
 
     // ==========================================
-    // 3b. Bộ Soi & Chọn Vùng Nét Nhất (Inspector Controller)
+    // 3b. Clarity Inspector Controller
     // ==========================================
     function setAccordionSection(sectionKey, expandState) {
         if (!DOM.accordionCards) return;
@@ -754,24 +754,24 @@
     function updateAccordionSummaries() {
         if (DOM.badgeClaritySummary) {
             const tool = inspectorState.currentTool;
-            let shapeName = 'Chữ nhật';
-            if (tool === 'polygon') shapeName = 'Đa giác';
+            let shapeName = 'Rectangle';
+            if (tool === 'polygon') shapeName = 'Polygon';
             else if (tool === 'lasso') shapeName = 'Lasso';
             const size = inspectorState.worldSize || 256;
             DOM.badgeClaritySummary.textContent = `${shapeName} · ${size}px`;
         }
         if (DOM.badgeBrushSummary && DOM.valBrushRadius) {
             const isRestore = inspectorState.currentTool === 'brush_restore';
-            DOM.badgeBrushSummary.textContent = `${isRestore ? '🟢 Phục hồi' : '🔴 Xóa'} · ${DOM.valBrushRadius.textContent.trim()}`;
+            DOM.badgeBrushSummary.textContent = `${isRestore ? '🟢 Restore' : '🔴 Erase'} · ${DOM.valBrushRadius.textContent.trim()}`;
         }
         if (DOM.badgeCropSummary) {
             const tool = inspectorState.currentTool;
-            let cropMode = 'Chữ nhật';
-            if (tool === 'crop_polygon') cropMode = 'Đa giác';
+            let cropMode = 'Rectangle';
+            if (tool === 'crop_polygon') cropMode = 'Polygon';
             else if (tool === 'crop_lasso') cropMode = 'Lasso';
             const state = ProjectStore.getState ? ProjectStore.getState() : {};
             const hasCrop = Boolean(state.cropDraft || state.cropRegion);
-            DOM.badgeCropSummary.textContent = hasCrop ? `${cropMode} (Đã crop)` : cropMode;
+            DOM.badgeCropSummary.textContent = hasCrop ? `${cropMode} (Cropped)` : cropMode;
         }
     }
 
@@ -780,7 +780,7 @@
         inspectorState.currentTool = toolName || 'rect';
         CanvasEngine.setToolMode(toolName);
 
-        // Cập nhật giao diện Pills
+        // Update pill buttons UI
         if (DOM.drawingToolPills) {
             DOM.drawingToolPills.forEach(pill => {
                 if (pill.dataset.tool === toolName) {
@@ -791,7 +791,7 @@
             });
         }
 
-        // Accordion Management: Bấm công cụ nào tự động mở nhóm công cụ đó
+        // Accordion Management: Automatically open section of selected tool
         const isBrush = (toolName === 'brush_exclude' || toolName === 'brush_restore');
         const isRect = (toolName === 'rect');
         const isClarity = (toolName === 'rect' || toolName === 'polygon' || toolName === 'lasso');
@@ -825,26 +825,26 @@
         if (DOM.cropControlsGroup) DOM.cropControlsGroup.style.display = isCrop ? 'block' : 'none';
 
         if (toolName === 'polygon') {
-            DOM.inspectorStatusText.textContent = '⬡ Click các điểm để tạo đa giác, click điểm đầu để khép kín';
-            setStatus('ready', 'Chế độ Đa giác: Click các đỉnh trên hình để khoanh vùng');
+            DOM.inspectorStatusText.textContent = '⬡ Click points to form polygon vertices, click first point to close';
+            setStatus('ready', 'Polygon Mode: Click vertices on image to enclose region');
         } else if (toolName === 'lasso') {
-            DOM.inspectorStatusText.textContent = '✏️ Nhấn giữ chuột và vẽ tự do quanh vùng cần chọn';
-            setStatus('ready', 'Chế độ Vẽ tự do (Lasso): Giữ chuột và vẽ viền quanh mô');
+            DOM.inspectorStatusText.textContent = '✏️ Hold and drag mouse to draw freehand contour';
+            setStatus('ready', 'Lasso Mode: Hold and draw freehand around target area');
         } else if (toolName === 'brush_exclude') {
-            DOM.inspectorStatusText.textContent = '🔴 Tô cọ lên các chi tiết thừa/nền để xóa (Alpha = 0 khi xuất)';
-            setStatus('ready', 'Cọ xóa: Tô lên vùng cần loại trừ khỏi ảnh ghép');
+            DOM.inspectorStatusText.textContent = '🔴 Paint to erase artifacts to transparent alpha (Alpha = 0)';
+            setStatus('ready', 'Erase Brush: Paint over regions to exclude from composite');
         } else if (toolName === 'brush_restore') {
-            DOM.inspectorStatusText.textContent = '🟢 Tô cọ để khôi phục lại phần đã xóa nhầm';
-            setStatus('ready', 'Cọ khôi phục: Tô lên vùng cần phục hồi');
+            DOM.inspectorStatusText.textContent = '🟢 Paint to restore previously erased regions';
+            setStatus('ready', 'Restore Brush: Paint over regions to restore');
         } else if (isCrop) {
-            DOM.inspectorStatusText.textContent = '✂️ Kéo chuột chọn khung giữ lại, sau đó bấm "Áp dụng Cắt"';
-            setStatus('ready', 'Công cụ Cắt: Khoanh vùng giữ lại và tùy chọn cắt file');
+            DOM.inspectorStatusText.textContent = '✂️ Drag to select crop bounding box, then click Apply Crop';
+            setStatus('ready', 'Crop Tool: Define bounding box to trim mosaic');
         } else if (toolName === 'select') {
-            DOM.inspectorStatusText.textContent = '↖️ Click vào ảnh trên bàn vẽ để di chuyển, xoay hoặc chỉnh màu';
-            setStatus('ready', 'Chế độ Chọn & Sửa: Click ảnh trên bàn vẽ để tinh chỉnh');
+            DOM.inspectorStatusText.textContent = '↖️ Click layer on canvas to transform, rotate, or adjust color';
+            setStatus('ready', 'Select & Transform Mode: Click layer on canvas to fine-tune');
         } else {
-            DOM.inspectorStatusText.textContent = '🔲 Kéo chuột trên hình để khoanh vùng chữ nhật';
-            setStatus('ready', 'Chế độ Chữ nhật: Kéo chọn vùng trên hình');
+            DOM.inspectorStatusText.textContent = '🔲 Drag on image to define rectangular inspection box';
+            setStatus('ready', 'Rectangle Mode: Drag to inspect region');
         }
 
         requestAnimationFrame(() => {
@@ -859,7 +859,7 @@
 
         if (inspectorState.isEnabled) {
             DOM.btnToggleInspectMode.classList.add('active');
-            DOM.inspectModeToggleText.innerHTML = 'Soi Vùng Nét: <b style="color:#38bdf8">BẬT</b>';
+            DOM.inspectModeToggleText.innerHTML = 'Clarity Inspector: <b style="color:#38bdf8">ON</b>';
             DOM.rightInspectorPanel.classList.remove('closed');
             DOM.rightInspectorPanel.classList.add('open-mobile');
             if (DOM.inspectorBackdrop) DOM.inspectorBackdrop.classList.add('active');
@@ -880,7 +880,7 @@
             });
         } else {
             DOM.btnToggleInspectMode.classList.remove('active');
-            DOM.inspectModeToggleText.innerHTML = 'Soi Vùng Nét: <b>TẮT</b>';
+            DOM.inspectModeToggleText.innerHTML = 'Clarity Inspector: <b>OFF</b>';
             DOM.rightInspectorPanel.classList.add('closed');
             DOM.rightInspectorPanel.classList.remove('open-mobile');
             if (DOM.inspectorBackdrop) DOM.inspectorBackdrop.classList.remove('active');
@@ -971,14 +971,14 @@
 
         const state = ProjectStore.getState();
 
-        // 1. Vẽ các nét cọ tàng hình đã lưu (Persistent Mask Regions) trên OpenSeadragon
+        // 1. Draw persistent mask regions on OpenSeadragon
         if (state.maskRegions && state.maskRegions.length > 0) {
             state.maskRegions.forEach(mask => {
                 const points = (mask.pointsWorld || []).map(osdWorldToScreen).filter(Boolean);
                 if (!points.length) return;
                 const isRestore = (mask.operation === 'restore');
                 
-                // Tính bán kính cọ trên màn hình theo tỷ lệ zoom hiện tại
+                // Calculate screen brush radius according to current zoom
                 const center = points[0];
                 const edgeWorld = [mask.pointsWorld[0][0] + (mask.radiusWorld || 20), mask.pointsWorld[0][1]];
                 const edgeScreen = osdWorldToScreen(edgeWorld);
@@ -1007,7 +1007,7 @@
             });
         }
 
-        // 2. Vẽ Khung Cắt đã áp dụng (Crop Region) với lớp phủ làm tối vùng ngoài trên OpenSeadragon
+        // 2. Draw crop region with dimmed outer overlay on OpenSeadragon
         const activeCrop = state.cropRegion;
         if (activeCrop && activeCrop.pointsWorld && activeCrop.pointsWorld.length >= 3) {
             const screenPts = activeCrop.pointsWorld.map(osdWorldToScreen).filter(Boolean);
@@ -1020,21 +1020,21 @@
                 const vw = canvas.width / dpr, vh = canvas.height / dpr;
 
                 ctx.save();
-                // Làm tối toàn bộ 4 góc ngoài vùng crop
+                // Dim all 4 corners outside crop region
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
                 ctx.fillRect(0, 0, vw, Math.max(0, cMinY));
                 ctx.fillRect(0, Math.min(vh, cMaxY), vw, Math.max(0, vh - cMaxY));
                 ctx.fillRect(0, Math.max(0, cMinY), Math.max(0, cMinX), Math.max(0, cH));
                 ctx.fillRect(Math.min(vw, cMaxX), Math.max(0, cMinY), Math.max(0, vw - cMaxX), Math.max(0, cH));
 
-                // Khung viền màu cam hổ phách
+                // Amber bounding border
                 ctx.strokeStyle = '#f59e0b';
                 ctx.lineWidth = 2.5;
                 ctx.setLineDash([8, 5]);
                 ctx.strokeRect(cMinX, cMinY, cW, cH);
 
-                // Badge nhãn kích thước ở góc khung cắt
-                const labelText = `✂️ Khung Cắt: ${Math.round(cW)} × ${Math.round(cH)} px`;
+                // Dimension badge at corner of crop box
+                const labelText = `✂️ Crop Box: ${Math.round(cW)} × ${Math.round(cH)} px`;
                 ctx.font = '600 12px Inter, sans-serif';
                 const textW = ctx.measureText(labelText).width;
                 ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
@@ -1045,7 +1045,7 @@
             }
         }
 
-        // 3. Vẽ nét vẽ nháp đang tương tác (Drawing Draft)
+        // 3. Draw interactive drawing draft
         const points = osdDrawState.pointsWorld.map(osdWorldToScreen).filter(Boolean);
         const current = osdDrawState.currentWorld ? osdWorldToScreen(osdDrawState.currentWorld) : null;
         if (points.length === 0) return;
@@ -1229,6 +1229,7 @@
         if (!inspectorState.isPinned || !region || !region.pointsWorld || region.pointsWorld.length < 3) {
             DOM.viewportSelectionOverlay.style.display = 'none';
             DOM.activeRegionBox.style.display = 'none';
+            renderOsdDrawingDraft();
             return;
         }
 
@@ -1236,35 +1237,33 @@
         let sourceElement = null;
         if (ProjectStore.getState().mode === 'auto' && uiState.osdViewer && uiState.osdViewer.viewport) {
             sourceElement = uiState.osdViewer.element || DOM.viewDeepZoom;
-            screenPoints = region.pointsWorld.map(point => {
-                const output = worldToOutputPixel(point);
-                const viewportPoint = uiState.osdViewer.viewport.imageToViewportCoordinates(output[0], output[1]);
-                const pixel = uiState.osdViewer.viewport.pixelFromPoint(viewportPoint, true);
-                return [pixel.x, pixel.y];
-            });
+            screenPoints = region.pointsWorld.map(point => osdWorldToScreen(point)).filter(Boolean);
         } else if (CanvasEngine.canvas) {
             sourceElement = CanvasEngine.canvas;
-            screenPoints = region.pointsWorld.map(point => CanvasEngine.worldToScreen(point[0], point[1]));
+            screenPoints = region.pointsWorld.map(point => CanvasEngine.worldToScreen(point[0], point[1])).filter(Boolean);
         }
-        if (!screenPoints.length) return;
+        // 1. Must show overlay before measuring bounds to avoid 0x0 rect returning full window offset
+        DOM.viewportSelectionOverlay.style.display = 'block';
 
         const overlayRect = DOM.viewportSelectionOverlay.getBoundingClientRect();
         const sourceRect = sourceElement.getBoundingClientRect();
-        const offsetX = sourceRect.left - overlayRect.left;
-        const offsetY = sourceRect.top - overlayRect.top;
+        const offsetX = (overlayRect.width > 0) ? (sourceRect.left - overlayRect.left) : 0;
+        const offsetY = (overlayRect.height > 0) ? (sourceRect.top - overlayRect.top) : 0;
         screenPoints = screenPoints.map(point => [point[0] + offsetX, point[1] + offsetY]);
 
         const xs = screenPoints.map(point => point[0]);
         const ys = screenPoints.map(point => point[1]);
         const minX = Math.min(...xs), minY = Math.min(...ys);
         const maxX = Math.max(...xs), maxY = Math.max(...ys);
-        DOM.viewportSelectionOverlay.style.display = 'block';
+
         DOM.activeRegionBox.style.display = 'block';
-        DOM.activeRegionBox.style.left = `${minX}px`;
-        DOM.activeRegionBox.style.top = `${minY}px`;
-        DOM.activeRegionBox.style.width = `${Math.max(1, maxX - minX)}px`;
-        DOM.activeRegionBox.style.height = `${Math.max(1, maxY - minY)}px`;
-        DOM.regionBoxTitle.textContent = `Vùng soi: ${Math.round(region.boundingRect[2])} x ${Math.round(region.boundingRect[3])} px`;
+        DOM.activeRegionBox.style.left = `${Math.round(minX)}px`;
+        DOM.activeRegionBox.style.top = `${Math.round(minY)}px`;
+        DOM.activeRegionBox.style.width = `${Math.max(1, Math.round(maxX - minX))}px`;
+        DOM.activeRegionBox.style.height = `${Math.max(1, Math.round(maxY - minY))}px`;
+        DOM.regionBoxTitle.textContent = `Inspected Region: ${Math.round(region.boundingRect[2])} × ${Math.round(region.boundingRect[3])} px`;
+
+        renderOsdDrawingDraft();
     }
 
     function handleRegionSelected(regionData) {
@@ -1298,15 +1297,15 @@
         if (inspectorState.currentTool && inspectorState.currentTool.startsWith('crop')) {
             const cropShape = shapeType.replace(/^crop_/, '') || 'rectangle';
             ProjectStore.setCropDraft({ shapeType: cropShape === 'crop' ? 'rectangle' : cropShape, pointsWorld });
-            DOM.inspectorStatusText.textContent = `✂️ Đã đặt vùng Crop [${Math.round(rw)}×${Math.round(rh)} px]. Bấm "Áp dụng Cắt" để hoàn tất.`;
-            setStatus('ready', `Đã chọn vùng Crop [${Math.round(rw)} × ${Math.round(rh)} px]`);
+            DOM.inspectorStatusText.textContent = `✂️ Set Crop Box [${Math.round(rw)}×${Math.round(rh)} px]. Click "Apply Crop" to finalize.`;
+            setStatus('ready', `selected vùng Crop [${Math.round(rw)} × ${Math.round(rh)} px]`);
             CanvasEngine.requestRender();
             return;
         }
 
         DOM.inspectorPinBar.style.display = 'flex';
-        DOM.inspectorPinCoords.innerHTML = `<i class="fa-solid fa-vector-square"></i> Vùng: ${Math.round(rw)}×${Math.round(rh)} px (${shapeType.toUpperCase()})`;
-        DOM.inspectorStatusText.textContent = `📌 Đã khoanh vùng [${Math.round(rw)}×${Math.round(rh)} px]. So sánh độ nét bên dưới và chọn ảnh nét nhất`;
+        DOM.inspectorPinCoords.innerHTML = `<i class="fa-solid fa-vector-square"></i> Region: ${Math.round(rw)}×${Math.round(rh)} px (${shapeType.toUpperCase()})`;
+        DOM.inspectorStatusText.textContent = `📌 Region enclosed [${Math.round(rw)}×${Math.round(rh)} px]. Compare sharpness scores below and pick best slice`;
 
         // Tự động mở inspector panel nếu đang đóng
         DOM.rightInspectorPanel.classList.remove('closed');
@@ -1358,14 +1357,14 @@
         const state = ProjectStore.getState();
         if (!state.layers || state.layers.length === 0) return;
 
-        // Hiển thị trạng thái đang trích xuất
+        // Display extraction status
         if (DOM.inspectorEmptyState) DOM.inspectorEmptyState.style.display = 'none';
         if (DOM.inspectorPatchesList) {
             DOM.inspectorPatchesList.style.display = 'flex';
             DOM.inspectorPatchesList.innerHTML = `
                 <div class="inspector-loading">
                     <i class="fa-solid fa-spinner fa-spin text-cyan"></i>
-                    <span>Đang trích xuất & tính toán độ nét các ảnh...</span>
+                    <span>Extracting & computing sharpness scores...</span>
                 </div>
             `;
         }
@@ -1401,7 +1400,7 @@
             } else {
                 if (DOM.inspectorEmptyState) {
                     DOM.inspectorEmptyState.style.display = 'block';
-                    DOM.inspectorEmptyState.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-warning"></i><p>${data.error || 'Không thể trích xuất độ nét vùng này'}</p>`;
+                    DOM.inspectorEmptyState.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-warning"></i><p>${data.error || 'Unable to extract clarity scores for this region'}</p>`;
                 }
                 if (DOM.inspectorPatchesList) DOM.inspectorPatchesList.style.display = 'none';
             }
@@ -1410,14 +1409,14 @@
                 console.warn("Inspector error:", err);
                 if (DOM.inspectorEmptyState) {
                     DOM.inspectorEmptyState.style.display = 'block';
-                    DOM.inspectorEmptyState.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-danger"></i><p>Lỗi kết nối bộ soi: ${err.message}</p>`;
+                    DOM.inspectorEmptyState.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-danger"></i><p>Clarity inspector connection error: ${err.message}</p>`;
                 }
                 if (DOM.inspectorPatchesList) DOM.inspectorPatchesList.style.display = 'none';
             }
         }
     }
 
-    // State của Lightbox Soi Ảnh Chi Tiết
+    // Lightbox state for detailed patch preview
     const lightboxState = {
         currentLayerId: null,
         zoom: 1,
@@ -1460,8 +1459,8 @@
             card.className = `patch-card ${isSharpest ? 'sharpest' : ''} ${isApplied ? 'active-applied' : ''}`;
 
             card.innerHTML = `
-                ${isSharpest ? '<div class="patch-card-badge"><i class="fa-solid fa-award"></i> NÉT NHẤT</div>' : ''}
-                <div class="patch-card-content" title="🔍 Bấm để xem ảnh phóng to & so sánh chi tiết">
+                ${isSharpest ? '<div class="patch-card-badge"><i class="fa-solid fa-award"></i> SHARPEST</div>' : ''}
+                <div class="patch-card-content" title="🔍 Click to view high-res preview & compare slices">
                     <div class="patch-card-thumb-wrap">
                         <img src="${patch.imageDataUrl}" class="patch-card-thumb" alt="${patch.sourceId}">
                         <div class="patch-thumb-zoom-hint"><i class="fa-solid fa-magnifying-glass-plus"></i></div>
@@ -1469,37 +1468,37 @@
                     <div class="patch-card-info">
                         <span class="patch-card-name" title="${patch.sourceId}">${patch.sourceId}</span>
                         <div class="patch-card-metric">
-                            <span>Độ nét:</span>
-                            <span class="metric-val ${isSharpest ? 'high' : ''}">${patch.sharpness.toLocaleString()}</span>
+                            <span>Sharpness:</span>
+                            <span class="metric-val ${isSharpest ? 'high' : ''}">${patch.sharpness.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                         <div class="patch-card-metric">
-                            <span>Bao phủ:</span>
+                            <span>Coverage:</span>
                             <span class="metric-val">${Math.round(patch.validCoverage * 100)}%</span>
                         </div>
                     </div>
                 </div>
                 <div class="patch-card-actions">
-                    <button class="btn-preview-hd" data-layer-id="${patch.layerId}" title="Phóng to ảnh góc chụp này để soi chi tiết tế bào">
-                        <i class="fa-solid fa-magnifying-glass-plus"></i> Soi Phóng To HD
+                    <button class="btn-preview-hd" data-layer-id="${patch.layerId}" title="Zoom in on this slice for detailed inspection">
+                        <i class="fa-solid fa-magnifying-glass-plus"></i> HD Inspect
                     </button>
-                    <button class="btn-apply-patch ${isApplied ? 'is-applied' : ''}" data-layer-id="${patch.layerId}" title="Dùng ảnh này làm vùng hiển thị nét">
-                        <i class="fa-solid ${isApplied ? 'fa-circle-check' : 'fa-check'}"></i> ${isApplied ? 'Đang áp dụng' : 'Dùng ảnh này'}
+                    <button class="btn-apply-patch ${isApplied ? 'is-applied' : ''}" data-layer-id="${patch.layerId}" title="Apply this slice to region">
+                        <i class="fa-solid ${isApplied ? 'fa-circle-check' : 'fa-check'}"></i> ${isApplied ? 'Applied' : 'Apply Slice'}
                     </button>
                 </div>
             `;
 
-            // 1. Click vào thumbnail hoặc nội dung card -> Mở Lightbox so sánh chi tiết
+            // 1. Click vào thumbnail hoặc nội dung card -> Unlock Lightbox so sánh chi tiết
             card.querySelector('.patch-card-content').addEventListener('click', () => {
                 openPatchLightbox(patch.layerId, patches, data.sharpestLayerId);
             });
 
-            // 2. Click vào nút "Soi Phóng To HD" -> Mở Lightbox
+            // 2. Click vào nút "Soi Phóng To HD" -> Unlock Lightbox
             card.querySelector('.btn-preview-hd').addEventListener('click', (e) => {
                 e.stopPropagation();
                 openPatchLightbox(patch.layerId, patches, data.sharpestLayerId);
             });
 
-            // 3. Click vào nút "Dùng ảnh này"
+            // 3. Click vào nút "Apply Slice"
             card.querySelector('.btn-apply-patch').addEventListener('click', (e) => {
                 e.stopPropagation();
                 applyPatchAsFocusRegion(patch.layerId);
@@ -1564,7 +1563,7 @@
         lightboxState.sharpestLayerId = sharpestLayerId;
         resetPatchZoom();
 
-        // Mở modal ngay lập tức
+        // Unlock modal ngay lập tức
         DOM.patchPreviewModal.style.display = 'flex';
         renderPatchModalDetail(selectedLayerId);
     }
@@ -1587,7 +1586,7 @@
         if (!patch) return;
 
         const isSharpest = (patch.layerId === lightboxState.sharpestLayerId);
-        DOM.patchModalTitle.textContent = `Chi Tiết Vùng Ảnh: ${patch.sourceId}`;
+        DOM.patchModalTitle.textContent = `Region Details: ${patch.sourceId}`;
         DOM.patchModalBadge.style.display = isSharpest ? 'inline-flex' : 'none';
 
         // Tải patch độ phân giải gốc siêu nét từ API /patch
@@ -1626,7 +1625,7 @@
                     const pW = patchRes.headers.get('X-Patch-Width');
                     const pH = patchRes.headers.get('X-Patch-Height');
                     if (pW && pH) {
-                        DOM.patchModalDimensions.textContent = `${pW} × ${pH} px (Gốc)`;
+                        DOM.patchModalDimensions.textContent = `${pW} × ${pH} px (Native)`;
                     }
                 }
             } catch (err) {
@@ -1648,7 +1647,7 @@
                 <img src="${p.imageDataUrl}" class="patch-compare-thumb" alt="${p.sourceId}">
                 <div class="patch-compare-info">
                     <span class="patch-compare-name">${p.sourceId}</span>
-                    <span class="patch-compare-sub">Độ nét: <b>${p.sharpness.toLocaleString()}</b> ${isSharp ? '⭐' : ''}</span>
+                    <span class="patch-compare-sub">Sharpness: <b>${p.sharpness.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> ${isSharp ? '⭐' : ''}</span>
                 </div>
             `;
             item.addEventListener('click', () => {
@@ -1694,11 +1693,11 @@
                 if (btn && btn.dataset.layerId === layerId) {
                     c.classList.add('active-applied');
                     btn.classList.add('is-applied');
-                    btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Đang áp dụng';
+                    btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Applied';
                 } else if (btn) {
                     c.classList.remove('active-applied');
                     btn.classList.remove('is-applied');
-                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Dùng ảnh này';
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Apply Slice';
                 }
             });
         }
@@ -1707,7 +1706,7 @@
         const layer = state.layers.find(l => l.id === layerId);
         const layerName = layer ? layer.sourceId : layerId;
         if (DOM.inspectorStatusText) {
-            DOM.inspectorStatusText.innerHTML = `✅ Đã dùng góc nét từ <b>${layerName}</b> cho vùng này!`;
+            DOM.inspectorStatusText.innerHTML = `✅ Applied sharpest slice from <b>${layerName}</b> to this region!`;
         }
 
         renderFocusRegionsList();
@@ -1785,7 +1784,7 @@
         DOM.focusRegionsList.innerHTML = '';
 
         if (list.length === 0) {
-            DOM.focusRegionsList.innerHTML = '<div class="empty-hint">Chưa gán vùng nét nào</div>';
+            DOM.focusRegionsList.innerHTML = '<div class="empty-hint">No focus regions applied yet</div>';
             updateOsdFocusOverlays();
             return;
         }
@@ -1802,8 +1801,8 @@
                     <span><b>#${idx + 1}</b> ${layerName.substring(0, 16)}... (${(fr.shapeType || 'rect').toUpperCase()})</span>
                 </div>
                 <div class="region-item-actions">
-                    <button class="btn-xs" data-action="lock" title="Khóa/Mở khóa"><i class="fa-solid ${fr.locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
-                    <button class="btn-xs text-danger" title="Xóa vùng này" data-action="delete"><i class="fa-solid fa-trash-can"></i></button>
+                    <button class="btn-xs" data-action="lock" title="Lock / Unlock"><i class="fa-solid ${fr.locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
+                    <button class="btn-xs text-danger" title="Delete this region" data-action="delete"><i class="fa-solid fa-trash-can"></i></button>
                 </div>
             `;
             item.querySelector('.region-checkbox').addEventListener('click', e => e.stopPropagation());
@@ -1840,7 +1839,7 @@
                     uiState.osdViewer.viewport.panTo(vpPoint, false);
                 }
 
-                // 3. Tự động mở accordion "1. Soi Vùng Nét"
+                // 3. Tự động mở accordion "1. Clarity Inspector"
                 setAccordionSection('clarity', true);
                 if (DOM.btnToggleInspectMode && !inspectorState.isEnabled) {
                     toggleInspectMode(true);
@@ -1913,7 +1912,7 @@
     function renderRegionBatchControls() {
         const state = ProjectStore.getState();
         const selected = ProjectStore.getSelectedRegions();
-        if (DOM.selectedRegionCount) DOM.selectedRegionCount.textContent = `${selected.all.length} vùng được chọn`;
+        if (DOM.selectedRegionCount) DOM.selectedRegionCount.textContent = `${selected.all.length} regions selected`;
         if (DOM.batchFocusLayerSelect) {
             const current = DOM.batchFocusLayerSelect.value;
             DOM.batchFocusLayerSelect.innerHTML = state.layers.filter(layer => layer.visible).map(layer => `<option value="${layer.id}">${layer.sourceId}</option>`).join('');
@@ -1944,7 +1943,7 @@
         const visibleLayers = state.layers.filter(l => l.visible);
 
         if (visibleLayers.length < 2) {
-            alert("Vui lòng chọn ít nhất 2 ảnh để ghép!");
+            alert("Please select at least 2 images to stitch!");
             return;
         }
 
@@ -1977,16 +1976,16 @@
             if (data.status === 'started') {
                 startPollingStatus();
             } else {
-                alert("Lỗi: " + (data.message || "Không thể bắt đầu ghép"));
+                alert("Error: " + (data.message || "Cannot start stitching"));
                 uiState.isStitching = false;
                 DOM.btnRunStitching.disabled = false;
-                setStatus('ready', 'Sẵn sàng');
+                setStatus('ready', 'Ready');
             }
         } catch (err) {
-            alert("Lỗi kết nối server: " + err.message);
+            alert("Server connection error: " + err.message);
             uiState.isStitching = false;
             DOM.btnRunStitching.disabled = false;
-            setStatus('ready', 'Sẵn sàng');
+            setStatus('ready', 'Ready');
         }
     }
 
@@ -1996,7 +1995,7 @@
         const visibleLayers = state.layers.filter(l => l.visible);
 
         if (visibleLayers.length === 0) {
-            alert("Không có layer nào đang bật để xuất!");
+            alert("No visible layers enabled for export!");
             return;
         }
 
@@ -2020,16 +2019,16 @@
             if (data.status === 'started') {
                 startPollingStatus();
             } else {
-                alert("Lỗi xuất ảnh: " + (data.error || "Không thể xuất"));
+                alert("Export error: " + (data.error || "Cannot export"));
                 uiState.isStitching = false;
                 DOM.btnRunStitching.disabled = false;
-                setStatus('ready', 'Sẵn sàng');
+                setStatus('ready', 'Ready');
             }
         } catch (err) {
-            alert("Lỗi kết nối server: " + err.message);
+            alert("Server connection error: " + err.message);
             uiState.isStitching = false;
             DOM.btnRunStitching.disabled = false;
-            setStatus('ready', 'Sẵn sàng');
+            setStatus('ready', 'Ready');
         }
     }
 
@@ -2060,7 +2059,7 @@
                     uiState.isStitching = false;
                     DOM.btnRunStitching.disabled = false;
                     setStatus('ready', 'Lỗi ghép ảnh');
-                    alert("Lỗi: " + task.error);
+                    alert("Error: " + task.error);
                 }
             } catch (err) {
                 console.error("Polling error:", err);
@@ -2103,7 +2102,7 @@
         uiState.outputPixelToWorld = mapping;
         uiState.worldToOutputPixel = MatrixUtils.inverse(mapping) || MatrixUtils.identity();
         initOpenSeadragonViewer(dziUrl, directImageUrl);
-        DOM.saveBtnText.textContent = `Lưu ảnh (${fileName})`;
+        DOM.saveBtnText.textContent = `Save Output (${fileName})`;
     }
 
     function initOpenSeadragonViewer(dziUrl, fallbackImageUrl) {
@@ -2346,11 +2345,11 @@
         const files = Array.from(rawFiles).filter(f => validExts.some(ext => f.name.toLowerCase().endsWith(ext)));
 
         if (files.length === 0) {
-            alert('Không tìm thấy file ảnh hợp lệ (.tif, .tiff, .png, .jpg, .bmp) trong dữ liệu được chọn.');
+            alert('No valid image files (.tif, .tiff, .png, .jpg, .bmp) found in selection.');
             return;
         }
 
-        // Dọn dẹp kết quả và nút lưu cũ
+        // Clean up previous results
         if (DOM.btnSaveOutput) DOM.btnSaveOutput.style.display = 'none';
         if (DOM.resultActions) DOM.resultActions.style.display = 'none';
         currentPreviewFile = null;
@@ -2449,10 +2448,10 @@
         DOM.btnRunStitching.disabled = false;
 
         if (failedFiles.length > 0) {
-            setStatus('ready', `Đã nạp ${state.layers.length}/${totalFiles} ảnh vào data/input/${detectedFolderName} (${failedFiles.length} ảnh lỗi)`);
-            alert(`Đã nạp ${state.layers.length}/${totalFiles} ảnh.\nCó ${failedFiles.length} ảnh bị lỗi khi tải lên: ${failedFiles.slice(0, 5).join(', ')}${failedFiles.length > 5 ? '...' : ''}`);
+            setStatus('ready', `Loaded ${state.layers.length}/${totalFiles} images into data/input/${detectedFolderName} (${failedFiles.length} failed)`);
+            alert(`Loaded ${state.layers.length}/${totalFiles} images.\n${failedFiles.length} images failed to upload: ${failedFiles.slice(0, 5).join(', ')}${failedFiles.length > 5 ? '...' : ''}`);
         } else {
-            setStatus('ready', `Đã nạp đủ toàn bộ ${state.layers.length}/${totalFiles} ảnh vào data/input/${detectedFolderName}`);
+            setStatus('ready', `Loaded all ${state.layers.length}/${totalFiles} images into data/input/${detectedFolderName}`);
         }
     }
 
@@ -2509,13 +2508,13 @@
                     if (DOM.iconProgressExpand) {
                         DOM.iconProgressExpand.className = 'fa-solid fa-compress';
                     }
-                    DOM.btnToggleProgressExpand.title = 'Thu gọn bảng tiến trình';
+                    DOM.btnToggleProgressExpand.title = 'Collapse progress panel';
                 } else {
                     DOM.terminalLogs.style.height = prevHeight || '90px';
                     if (DOM.iconProgressExpand) {
                         DOM.iconProgressExpand.className = 'fa-solid fa-up-right-and-down-left-from-center';
                     }
-                    DOM.btnToggleProgressExpand.title = 'Phóng to bảng tiến trình';
+                    DOM.btnToggleProgressExpand.title = 'Expand progress panel';
                 }
                 DOM.terminalLogs.scrollTop = DOM.terminalLogs.scrollHeight;
             });
@@ -2555,7 +2554,7 @@
             CanvasEngine.requestRender();
         });
 
-        // Nút Làm Mới toàn bộ / Nạp thư mục mới
+        // Nút Reset All toàn bộ / Nạp thư mục mới
         if (DOM.btnResetAll) DOM.btnResetAll.addEventListener('click', resetEntireState);
         if (DOM.btnClearList) DOM.btnClearList.addEventListener('click', resetEntireState);
 
@@ -2564,7 +2563,7 @@
 
         DOM.btnRunStitching.addEventListener('click', handleMainActionButton);
 
-        // Nút Lưu kết quả vào thư mục đích -> Mở Save Modal Dialog
+        // Nút Lưu kết quả vào thư mục đích -> Unlock Save Modal Dialog
         if (DOM.btnSaveOutput) DOM.btnSaveOutput.addEventListener('click', openSaveModal);
         if (DOM.btnSaveTrigger) DOM.btnSaveTrigger.addEventListener('click', openSaveModal);
 
@@ -2696,7 +2695,7 @@
             DOM.btnCancelCrop.addEventListener('click', () => {
                 ProjectStore.cancelCropDraft();
                 CanvasEngine.cancelDraft();
-                setStatus('ready', 'Đã hủy bản nháp crop, crop đã Apply được giữ nguyên');
+                setStatus('ready', 'Cancelled bản nháp crop, crop đã Apply được giữ nguyên');
                 updateAccordionSummaries();
                 renderOsdDrawingDraft();
             });
@@ -2704,7 +2703,7 @@
         if (DOM.btnResetCrop) {
             DOM.btnResetCrop.addEventListener('click', () => {
                 ProjectStore.clearCropRegion();
-                setStatus('ready', 'Đã hủy vùng cắt (Crop)');
+                setStatus('ready', 'Cancelled vùng cắt (Crop)');
                 updateAccordionSummaries();
                 CanvasEngine.requestRender();
                 renderOsdDrawingDraft();
@@ -2875,12 +2874,12 @@
         if (DOM.btnUndo) {
             const command = ProjectStore.getState().historyJournal[ProjectStore.getState().historyCursor - 1];
             DOM.btnUndo.disabled = !ProjectStore.canUndo();
-            DOM.btnUndo.title = command ? `Undo: ${command.label}` : 'Không có thao tác để hoàn tác';
+            DOM.btnUndo.title = command ? `Undo: ${command.label}` : 'No action to undo';
         }
         if (DOM.btnRedo) {
             const command = ProjectStore.getState().historyJournal[ProjectStore.getState().historyCursor];
             DOM.btnRedo.disabled = !ProjectStore.canRedo();
-            DOM.btnRedo.title = command ? `Redo: ${command.label}` : 'Không có thao tác để làm lại';
+            DOM.btnRedo.title = command ? `Redo: ${command.label}` : 'No action to redo';
         }
     }
 

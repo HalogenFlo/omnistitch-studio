@@ -1,6 +1,6 @@
-# Chức năng: Khớp đặc trưng hai ảnh (Pairwise Matching) và ước lượng biến đổi hình học
-# Lí do tạo: Tìm ma trận tương thích giữa 2 ảnh tile với bộ lọc nhiễu Lowe's Ratio Test + USAC_MAGSAC/RANSAC + Phase Correlation Fallback cho mô chưa nhuộm
-# Đường dẫn: tool/image_alignment/backend/matcher.py
+# Feature: Khớp đặc trưng hai ảnh (Pairwise Matching) và ước lượng biến đổi hình học
+# Purpose: Computes transformation matrices via Lowe's ratio test, RANSAC outlier rejection, and phase correlation fallback
+# Path: tool/image_alignment/backend/matcher.py
 
 import cv2
 import numpy as np
@@ -9,7 +9,7 @@ class FeatureMatcher:
     def __init__(self, method='sift', ratio_threshold=0.80, min_inliers=8, motion_model='affine'):
         """
         - method: 'sift', 'akaze', 'orb'
-        - ratio_threshold: Lowe's ratio test threshold (mặc định 0.80 cho mô học)
+        - ratio_threshold: Lowe's ratio test threshold (default 0.80)
         - min_inliers: Số lượng inliers tối thiểu để coi là 2 ảnh có sự chồng lặp hợp lệ (8 inliers)
         - motion_model: 'rigid' (Euclidean), 'affine' (Affine 2x3), 'homography' (Perspective 3x3)
         """

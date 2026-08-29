@@ -1,13 +1,13 @@
-# Chức năng: Tìm hình chữ nhật nội tiếp lớn nhất (Largest Inscribed Rectangle) để tự động cắt vuông vức ảnh
-# Lí do tạo: Cắt sạch viền khuyết ziczac khi người dùng bật chế độ Auto-Crop
-# Đường dẫn: tool/image_alignment/backend/postprocessing.py
+# Feature: Calculates largest inscribed rectangle for automatic seam-free boundary cropping
+# Purpose: Removes irregular boundary artifacts when Auto-Crop is enabled
+# Path: tool/image_alignment/backend/postprocessing.py
 
 import cv2
 import numpy as np
 
 def find_largest_inscribed_rectangle(mask_binary):
     """
-    Tìm tọa độ hình chữ nhật (x, y, w, h) có diện tích lớn nhất nằm hoàn toàn bên trong vùng mask > 0.
+    Finds bounding rectangle (x, y, w, h) with maximum area inside mask > 0.
     mask_binary: numpy array uint8 (0 và 255)
     """
     h, w = mask_binary.shape[:2]

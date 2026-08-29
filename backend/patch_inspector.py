@@ -1,6 +1,6 @@
-# Chức năng: Backend Patch Inspector & Sharpness Calculation
-# Lí do tạo: Cắt patch full-resolution tại cùng tọa độ world từ nhiều layer và tính điểm nét (variance of Laplacian)
-# Đường dẫn: tool/image_alignment/backend/patch_inspector.py
+# Feature: Backend Patch Inspector & Sharpness Calculation
+# Purpose: Extracts full-resolution patches at identical world coordinates across layers and calculates Laplacian sharpness variance
+# Path: tool/image_alignment/backend/patch_inspector.py
 
 import os
 import cv2
@@ -14,7 +14,7 @@ from backend.project_schemas import (
     ProjectState, ProjectLayer, matrix_inverse, transform_point
 )
 
-# In-memory cache cho ảnh nguồn đã đọc (giới hạn LRU đơn giản)
+# In-memory LRU cache for decoded source tiles
 _IMAGE_CACHE = {}
 _CACHE_MAX_ENTRIES = 20
 _CACHE_MAX_BYTES = 256 * 1024 * 1024
@@ -39,7 +39,7 @@ def _get_cached_image(file_path: str) -> np.ndarray:
         source_pixels = int(metadata["width"]) * int(metadata["height"])
         if source_pixels > _MAX_SOURCE_DECODE_PIXELS:
             raise MemoryError(
-                f"Patch source {source_pixels} pixels vượt decode guard {_MAX_SOURCE_DECODE_PIXELS} pixels"
+                f"Patch source {source_pixels} pixels exceeds decode guard limit {_MAX_SOURCE_DECODE_PIXELS} pixels"
             )
         img = read_image(file_path)
         while _IMAGE_CACHE and (len(_IMAGE_CACHE) >= _CACHE_MAX_ENTRIES or _CACHE_BYTES + img.nbytes > _CACHE_MAX_BYTES):
@@ -91,7 +91,7 @@ def inspect_patches_at_world_region(
     """
     # 1. Chuẩn hóa points_world
     if points_world is not None and len(points_world) > _MAX_REGION_POINTS:
-        raise ValueError(f"points_world vượt giới hạn {_MAX_REGION_POINTS} điểm")
+        raise ValueError(f"points_world exceeds limit {_MAX_REGION_POINTS} điểm")
     if points_world is not None and len(points_world) >= 3:
         pts = np.array([[float(p[0]), float(p[1])] for p in points_world], dtype=np.float32)
     elif world_rect is not None and len(world_rect) >= 4:
@@ -114,7 +114,7 @@ def inspect_patches_at_world_region(
         raise ValueError("Kích thước vùng chọn phải lớn hơn 0")
 
     if isinstance(output_size, bool):
-        raise ValueError("output_size không hợp lệ")
+        raise ValueError("output_size is invalid")
     output_size = max(32, min(1024, int(output_size)))
     
     # Giữ đúng aspect ratio của bounding box
@@ -125,7 +125,7 @@ def inspect_patches_at_world_region(
         out_h = output_size
         out_w = max(32, int(round(output_size * (box_w / box_h))))
     if out_w * out_h > _MAX_PREVIEW_PIXELS:
-        raise ValueError("Patch preview vượt giới hạn pixel")
+        raise ValueError("Patch preview exceeds limit pixel")
 
     # 4 góc bounding box trong world space
     box_corners = np.array([
@@ -324,7 +324,7 @@ def extract_native_patch_image(
     if not isinstance(points_world, list) or len(points_world) < 3:
         raise ValueError("points_world phải có ít nhất 3 điểm")
     if len(points_world) > _MAX_REGION_POINTS:
-        raise ValueError(f"points_world vượt giới hạn {_MAX_REGION_POINTS} điểm")
+        raise ValueError(f"points_world exceeds limit {_MAX_REGION_POINTS} điểm")
     pts = np.array([[float(p[0]), float(p[1])] for p in points_world], dtype=np.float32)
     if not np.all(np.isfinite(pts)):
         raise ValueError("points_world chứa tọa độ không hữu hạn")
@@ -334,14 +334,14 @@ def extract_native_patch_image(
     box_h = float(max_y - min_y)
 
     if box_w <= 0 or box_h <= 0:
-        raise ValueError("Vùng chọn không hợp lệ")
+        raise ValueError("Vùng chọn is invalid")
 
     if isinstance(max_pixels, bool):
-        raise ValueError("max_pixels không hợp lệ")
+        raise ValueError("max_pixels is invalid")
     max_pixels = max(1, min(int(max_pixels), _MAX_NATIVE_PIXELS))
     inv_m = matrix_inverse(layer.sourceToWorld)
     if inv_m is None:
-        raise ValueError("Ma trận nghịch đảo layer không hợp lệ")
+        raise ValueError("Ma trận nghịch đảo layer is invalid")
 
     # Native output sampling follows the source footprint, including scale/rotation.
     world_box = [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
@@ -349,7 +349,7 @@ def extract_native_patch_image(
     native_w = max(np.linalg.norm(native_corners[1] - native_corners[0]), np.linalg.norm(native_corners[2] - native_corners[3]))
     native_h = max(np.linalg.norm(native_corners[3] - native_corners[0]), np.linalg.norm(native_corners[2] - native_corners[1]))
     if not np.isfinite(native_w) or not np.isfinite(native_h) or native_w <= 0 or native_h <= 0:
-        raise ValueError("Source footprint không hợp lệ")
+        raise ValueError("Source footprint is invalid")
     total_px = max(1.0, native_w * native_h)
     scale = min(1.0, 8192.0 / native_w, 8192.0 / native_h)
     if total_px > max_pixels:

@@ -1,6 +1,7 @@
-# Chức năng: Server HTTP backend phục vụ WSI Stitching Studio
-# Lí do tạo: Cung cấp API quét thư mục nguồn, ghép ảnh tự động, lưu vào data/output/<tên_thư_mục>.<định_dạng>, streaming tiến trình và phục vụ DeepZoom Tiles
-# Đường dẫn: tool/image_alignment/server.py
+# Feature: HTTP backend server for OmniStitch Studio
+# Author: HalogenBr
+# Purpose: Provides APIs for scanning source folders, automated stitching, saving to data/result, streaming progress, and serving DeepZoom Tiles
+# Path: server.py
 
 import os
 import sys
@@ -14,14 +15,14 @@ from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
-# Đảm bảo import được module backend
+# Ensure backend module is importable
 tool_dir = os.path.dirname(os.path.abspath(__file__))
 workspace_dir = tool_dir
 for p in [workspace_dir, tool_dir]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# Tự động cấp memory budget theo dung lượng RAM thực tế của máy
+# Automatically allocate memory budget based on system RAM capacity
 if "IMAGE_ALIGNMENT_MAX_MEMORY_MB" not in os.environ:
     try:
         import psutil
@@ -34,7 +35,7 @@ import cv2
 from backend.io_utils import read_image, save_tiff, create_thumbnail, get_image_metadata
 from backend.pipeline import run_wsi_stitching_pipeline
 
-PORT = int(os.environ.get("PORT", 5000))
+PORT = int(os.environ.get("PORT", 5050))
 WORKSPACE_DIR = workspace_dir
 NHUOM_MO_DIR = os.path.join(WORKSPACE_DIR, "NhuomMo")
 DATA_DIR = os.path.join(WORKSPACE_DIR, "data")
@@ -141,7 +142,7 @@ def background_stitching_worker(image_paths, options):
             stitching_task["error"] = str(e)
             stitching_task["logs"].append({
                 "percent": stitching_task["progress"],
-                "step": "Lỗi!",
+                "step": "Error!",
                 "details": {"error": str(e), "traceback": traceback.format_exc()}
             })
     finally:
@@ -196,7 +197,7 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
 
         # API Health Check
         elif path == "/api/health":
-            self.send_json({"status": "ok", "service": "WSI Alignment Studio"})
+            self.send_json({"status": "ok", "service": "OmniStitch Studio"})
 
         # API: Danh sách ảnh
         elif path == "/api/images":
@@ -295,20 +296,20 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         try:
             content_length = int(self.headers.get('Content-Length', 0))
         except ValueError:
-            self.send_json({"error": "Content-Length không hợp lệ"}, status=400)
+            self.send_json({"error": "Content-Length is invalid"}, status=400)
             return False
         if content_length <= 0:
             self.send_json({"error": "Content-Length bắt buộc và phải lớn hơn 0"}, status=411)
             return False
         if content_length > limit:
-            self.send_json({"error": f"Request vượt giới hạn {limit} bytes"}, status=413)
+            self.send_json({"error": f"Request exceeds limit {limit} bytes"}, status=413)
             return False
         return True
 
     def resolve_path(self, rel_or_abs_path):
         """Resolve a user path while preventing traversal outside the workspace."""
         if not isinstance(rel_or_abs_path, str) or not rel_or_abs_path.strip():
-            raise ValueError("Đường dẫn không hợp lệ")
+            raise ValueError("Đường dẫn is invalid")
         if os.path.isabs(rel_or_abs_path):
             return _contained_path(WORKSPACE_DIR, rel_or_abs_path)
         if rel_or_abs_path.startswith("uploads/"):
@@ -332,7 +333,7 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
 
             abs_folder = self.resolve_path(folder_input)
             if not os.path.exists(abs_folder) or not os.path.isdir(abs_folder):
-                self.send_json({"error": f"Thư mục không tồn tại: {folder_input}"}, status=404)
+                self.send_json({"error": f"Directory does not exist: {folder_input}"}, status=404)
                 return
 
             valid_exts = ('.tif', '.tiff', '.jpg', '.jpeg', '.png', '.bmp')
@@ -464,13 +465,13 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         folder_name = data.get("folderName", None)
 
         if not isinstance(image_rel_paths, list) or not all(isinstance(path, str) for path in image_rel_paths):
-            self.send_json({"status": "error", "message": "Danh sách ảnh không hợp lệ"}, status=400)
+            self.send_json({"status": "error", "message": "Invalid image list"}, status=400)
             return
         if len(image_rel_paths) > 512:
-            self.send_json({"status": "error", "message": "Danh sách ảnh vượt giới hạn 512 file"}, status=413)
+            self.send_json({"status": "error", "message": "Image list exceeds 512 files limit"}, status=413)
             return
         if len(image_rel_paths) < 2:
-            self.send_json({"status": "error", "message": "Cần tối thiểu 2 ảnh để ghép!"}, status=400)
+            self.send_json({"status": "error", "message": "At least 2 images required for stitching!"}, status=400)
             return
 
         # Chuyển thành đường dẫn tuyệt đối
@@ -481,7 +482,7 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 abs_paths.append(p)
 
         if len(abs_paths) < 2:
-            self.send_json({"status": "error", "message": "Các tệp ảnh không tồn tại trên hệ thống!"}, status=400)
+            self.send_json({"status": "error", "message": "Image files do not exist on system!"}, status=400)
             return
 
         # Xác định tên file xuất theo tên thư mục nguồn
@@ -626,10 +627,10 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Missing parameters"}, status=400)
                 return
             if os.path.basename(file_name) != file_name:
-                self.send_json({"error": "Tên file không hợp lệ"}, status=400)
+                self.send_json({"error": "Tên file is invalid"}, status=400)
                 return
             if folder_name != 'uploads' and (os.path.basename(folder_name) != folder_name or folder_name in ('.', '..')):
-                self.send_json({"error": "Tên folder không hợp lệ"}, status=400)
+                self.send_json({"error": "Tên folder is invalid"}, status=400)
                 return
 
             header, encoded = data_url.split(",", 1)
@@ -668,10 +669,10 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Danh sách file trống"}, status=400)
                 return
             if len(files) > 256:
-                self.send_json({"error": "Upload batch vượt giới hạn 256 file"}, status=413)
+                self.send_json({"error": "Upload batch exceeds limit 256 file"}, status=413)
                 return
             if folder_name != 'uploads' and (os.path.basename(folder_name) != folder_name or folder_name in ('.', '..')):
-                self.send_json({"error": "Tên folder không hợp lệ"}, status=400)
+                self.send_json({"error": "Tên folder is invalid"}, status=400)
                 return
 
             if folder_name and folder_name != 'uploads':
@@ -791,7 +792,7 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 return
 
             if not points_world and not world_rect:
-                self.send_json({"error": "pointsWorld hoặc worldRect không hợp lệ"}, status=400)
+                self.send_json({"error": "pointsWorld hoặc worldRect is invalid"}, status=400)
                 return
 
             res = inspect_patches_at_world_region(
@@ -848,7 +849,7 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                     rx, ry, rw, rh = world_rect[:4]
                     points_world = [[rx, ry], [rx+rw, ry], [rx+rw, ry+rh], [rx, ry+rh]]
                 else:
-                    self.send_json({"error": "pointsWorld không hợp lệ"}, status=400)
+                    self.send_json({"error": "pointsWorld is invalid"}, status=400)
                     return
 
             patch_result = extract_native_patch_image(
@@ -952,7 +953,7 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             source_preview_file = data.get('sourcePreviewFile') # ví dụ data/result/2586A.tif
 
             if os.path.basename(folder_name) != folder_name or export_format.lower() not in ('tif', 'tiff', 'png', 'jpg', 'jpeg', 'bmp'):
-                self.send_json({"error": "Tên output hoặc định dạng không hợp lệ"}, status=400)
+                self.send_json({"error": "Tên output hoặc định dạng is invalid"}, status=400)
                 return
             abs_target_dir = self.resolve_path(target_dir)
 
@@ -1005,7 +1006,7 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             save_dir = data.get('saveDir', 'aligned')
 
             if not image_data_url or os.path.basename(file_name or '') != file_name:
-                self.send_json({"error": "Dữ liệu hoặc tên file không hợp lệ"}, status=400)
+                self.send_json({"error": "Dữ liệu hoặc tên file is invalid"}, status=400)
                 return
 
             header, encoded = image_data_url.split(",", 1)

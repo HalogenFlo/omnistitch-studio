@@ -1,6 +1,7 @@
-# Chức năng: Bộ điều phối toàn trình (Pipeline Orchestrator) ghép ảnh mô học WSI tự động
-# Lí do tạo: Nhận danh sách đường dẫn ảnh -> Trích xuất -> Khớp -> MST -> Blending -> Xuất định dạng gốc
-# Đường dẫn: tool/image_alignment/backend/pipeline.py
+# Feature: End-to-end pipeline orchestrator for automated gigapixel mosaic stitching
+# Author: HalogenBr
+# Purpose: Receives tile paths -> Extract features -> Match -> MST -> Blend -> Export
+# Path: backend/pipeline.py
 
 import os
 import time
@@ -52,8 +53,8 @@ def run_wsi_stitching_pipeline(
     project_layers=None
 ):
     """
-    Toàn trình quy trình ghép ảnh mô học WSI tự động:
-    - image_paths: Danh sách đường dẫn tệp ảnh (.tif, .png, .jpg, .bmp)
+    Automated gigapixel mosaic stitching pipeline:
+    - image_paths: List of image tile paths (.tif, .png, .jpg, .bmp)
     - output_dir: Thư mục lưu kết quả (mặc định data/output)
     - feature_method: 'sift', 'akaze', 'orb'
     - motion_model: 'affine', 'rigid', 'homography'
@@ -85,7 +86,7 @@ def run_wsi_stitching_pipeline(
         base_folder = os.path.basename(parent_dir)
         custom_output_name = base_folder if base_folder and base_folder not in ['.', '', 'uploads'] else "stitched_wsi"
 
-    report(5, "Đang đọc danh sách ảnh...", {"total_images": n_images})
+    report(5, "Reading image tiles...", {"total_images": n_images})
 
     # 1. Đọc toàn bộ ảnh
     images = {}
@@ -93,7 +94,7 @@ def run_wsi_stitching_pipeline(
     for i, path in enumerate(image_paths):
         source_images[i] = read_image(path)
         images[i] = source_images[i][:, :, :3] if source_images[i].ndim == 3 and source_images[i].shape[2] == 4 else source_images[i]
-        report(5 + int(20 * (i + 1) / n_images), f"Đã đọc ảnh {i+1}/{n_images}: {os.path.basename(path)}")
+        report(5 + int(20 * (i + 1) / n_images), f"Loaded tile {i+1}/{n_images}: {os.path.basename(path)}")
 
     # Kiểm tra xem có thể tái sử dụng tọa độ layers đã căn chỉnh chuẩn từ Studio không
     has_valid_project = False
@@ -149,13 +150,13 @@ def run_wsi_stitching_pipeline(
             global_transforms = {i: layer_mats[i] for i in range(n_images)}
             matches_graph_data = []
             has_valid_project = True
-            report(60, "Đã đồng bộ 100% tọa độ căn chỉnh chính xác từ Studio...")
+            report(60, "Synchronized coordinates from Studio...")
         except Exception as e_pl:
             has_valid_project = False
 
     if not has_valid_project:
         # 2. Trích xuất đặc trưng
-        report(25, f"Đang trích xuất đặc trưng siêu nhạy ({feature_method.upper()})...")
+        report(25, f"Extracting multi-scale features ({feature_method.upper()})...")
         feature_engine = FeatureEngine(method=feature_method, max_features=8000, enable_clahe=True)
         keypoints = {}
         descriptors = {}
@@ -167,7 +168,7 @@ def run_wsi_stitching_pipeline(
             grays[i] = gray
 
         # 3. Khớp đặc trưng từng cặp (Pairwise Matching)
-        report(40, "Đang so khớp các vùng chồng lặp (Pairwise Matching)...")
+        report(40, "Computing pairwise feature matches (RANSAC)...")
         matcher = FeatureMatcher(method=feature_method, ratio_threshold=0.80, min_inliers=8, motion_model=motion_model)
         
         matches_matrix = {}
@@ -208,7 +209,7 @@ def run_wsi_stitching_pipeline(
                     })
 
         # 4. Tối ưu đồ thị ghép MST & Tính toán Canvas mở rộng
-        report(60, "Đang tối ưu hóa vị trí toàn cục (Maximum Spanning Tree)...")
+        report(60, "Optimizing global coordinate alignment...")
         global_stitcher = GlobalStitcher(images, keypoints, matches_matrix, transforms_matrix)
         global_transforms, tree_edges = global_stitcher.build_spanning_tree(confidence_matrix, root_idx=0)
         
@@ -218,33 +219,33 @@ def run_wsi_stitching_pipeline(
     estimated_canvas_bytes = canvas_w * canvas_h * 20
     if estimated_canvas_bytes > max_memory_mb * 1024 * 1024:
         raise MemoryError(
-            f"Canvas {canvas_w}x{canvas_h} cần khoảng {estimated_canvas_bytes / (1024 * 1024):.0f} MB, vượt budget {max_memory_mb} MB"
+            f"Canvas {canvas_w}x{canvas_h} cần khoảng {estimated_canvas_bytes / (1024 * 1024):.0f} MB, exceed budget {max_memory_mb} MB"
         )
 
     # 5. Tích lũy và hòa trộn Voronoi Adaptive Seam Blending
-    report(75, f"Đang khởi tạo Canvas WSI ({canvas_w}x{canvas_h} px)...")
+    report(75, f"Initializing Gigapixel Canvas ({canvas_w}x{canvas_h} px)...")
     blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode, focus_stacking=True)
 
     for i, img in source_images.items():
         H = adjusted_transforms[i]
         blender.accumulate_tile(img, H, motion_model=motion_model)
-        report(75 + int(15 * (i + 1) / n_images), f"Đang hòa trộn tile {i+1}/{n_images} vào Canvas...")
+        report(75 + int(15 * (i + 1) / n_images), f"Blending tile {i+1}/{n_images} into canvas...")
 
     # 6. Chuẩn hóa kết quả ảnh hoàn chỉnh
-    report(90, "Đang trích xuất ảnh toàn cảnh sắc nét...")
+    report(90, "Extracting sharp panorama composite...")
     blended_image, global_mask = blender.finalize()
 
     # 7. Tự động Crop hình chữ nhật nếu bật
     crop_x = crop_y = 0
     if auto_crop:
-        report(92, "Đang tự động cắt viền hình chữ nhật nội tiếp lớn nhất...")
+        report(92, "Auto-cropping largest inscribed bounding rectangle...")
         crop_x, crop_y, crop_w, crop_h = find_largest_inscribed_rectangle(global_mask)
         if crop_w > 0 and crop_h > 0:
             blended_image = blended_image[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
             global_mask = global_mask[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
 
     # 8. Xuất file kết quả đúng định dạng vào output_dir (data/output)
-    report(95, f"Đang xuất file ảnh WSI định dạng .{export_format} và tạo DeepZoom DZI...")
+    report(95, f"Exporting gigapixel mosaic format .{export_format} and generating DeepZoom pyramids (DZI)...")
     os.makedirs(output_dir, exist_ok=True)
     out_filename = f"{custom_output_name}.{export_format}"
     export_result = export_wsi_multiformat(
@@ -266,7 +267,7 @@ def run_wsi_stitching_pipeline(
     for idx, H in global_transforms.items():
         serializable_transforms[idx] = H.flatten().tolist()
 
-    report(100, "Ghép ảnh hoàn tất!", {
+    report(100, "Mosaic stitching completed successfully!", {
         "output_file": out_filepath,
         "dzi_file": dzi_filepath,
         "format": export_format,

@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use OmniStitch Studio in your research or project, please cite it as below."
+authors:
+  - name: "HalogenBr"
+    alias: "HalogenBr"
+title: "OmniStitch Studio: Cross-Domain Gigapixel Image Stitching & Multi-Focus Clarity Inspector for Microscopy and Remote Sensing"
+version: 1.0.0
+date-released: 2026-08-29
+url: "https://github.com/Phatjhhoq8/omnistitch-studio"
+repository-code: "https://github.com/Phatjhhoq8/omnistitch-studio"
+keywords:
+  - digital-pathology
+  - whole-slide-imaging
+  - remote-sensing
+  - uav-orthomosaic
+  - image-stitching
+  - sift
+  - deepzoom
+  - computer-vision
+license: MIT

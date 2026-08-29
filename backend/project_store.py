@@ -1,7 +1,7 @@
 """
-Chức năng: Quản lý lưu trữ, truy xuất Project State và kiểm tra Revision Conflict
-Lí do tạo: Đảm bảo tính bền vững (Persistence) của dự án, autosave không mất dữ liệu
-Đường dẫn: tool/image_alignment/backend/project_store.py
+Feature: Manages storage, project retrieval, revision tracking, and conflict detection
+Purpose: Ensures persistence and prevents data loss during autosave
+Path: tool/image_alignment/backend/project_store.py
 """
 
 import os
@@ -41,7 +41,7 @@ def _project_file_lock(project_id: str, timeout: float = 30.0):
                     break
                 except OSError as exc:
                     if exc.errno not in (errno.EACCES, errno.EDEADLK, errno.EAGAIN) or time_module.monotonic() >= deadline:
-                        raise TimeoutError(f"Không thể khóa project {project_id}") from exc
+                        raise TimeoutError(f"Unable to lock project {project_id}") from exc
                     time_module.sleep(0.05)
         else:
             import fcntl
@@ -68,7 +68,7 @@ def get_projects_dir() -> str:
 def get_project_file_path(project_id: str) -> str:
     safe_id = "".join(c for c in project_id if c.isalnum() or c in ("-", "_")).rstrip()
     if not safe_id or safe_id != project_id:
-        raise ValueError("Project id không hợp lệ")
+        raise ValueError("Project id is invalid")
     return os.path.join(get_projects_dir(), f"{safe_id}.json")
 
 def save_project(state: ProjectState) -> Dict[str, Any]:

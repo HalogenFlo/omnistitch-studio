@@ -1,6 +1,6 @@
-# Chức năng: Trích xuất & Mô tả đặc trưng (SIFT / AKAZE / ORB) siêu nhạy cho mô học (đặc biệt là mô chưa nhuộm / tương phản thấp)
-# Lí do tạo: Tìm kiếm keypoints và descriptors chính xác giữa các ảnh kính hiển vi với độ ổn định cao
-# Đường dẫn: tool/image_alignment/backend/feature_engine.py
+# Feature: Feature extraction and description (SIFT / AKAZE / ORB) optimized for histology and microscopy
+# Purpose: Detects accurate keypoints and descriptors across microscope tiles with high numerical stability
+# Path: tool/image_alignment/backend/feature_engine.py
 
 import cv2
 import numpy as np
@@ -8,9 +8,9 @@ import numpy as np
 class FeatureEngine:
     def __init__(self, method='sift', max_features=8000, enable_clahe=True):
         """
-        Khởi tạo bộ trích xuất đặc trưng tối ưu mô học.
+        Initializes feature extractor optimized for histology and remote sensing.
         - method: 'sift', 'akaze', 'orb'
-        - max_features: Số lượng đặc trưng tối đa (mặc định 8000 cho mô học)
+        - max_features: Maximum feature count (default 8000)
         - enable_clahe: Bật tiền xử lý CLAHE tăng cường tương phản vi thể
         """
         self.method = method.lower()
@@ -50,7 +50,7 @@ class FeatureEngine:
                 fastThreshold=15
             )
         else:
-            raise ValueError(f"Thuật toán đặc trưng không hợp lệ: {self.method}. Hãy chọn 'sift', 'akaze', hoặc 'orb'.")
+            raise ValueError(f"Thuật toán đặc trưng is invalid: {self.method}. Hãy chọn 'sift', 'akaze', hoặc 'orb'.")
 
     def preprocess_for_detection(self, img_rgb):
         """

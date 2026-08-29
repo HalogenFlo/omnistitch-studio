@@ -112,7 +112,7 @@ class TestTiledManualExport(unittest.TestCase):
                 )
                 self.assertTrue(result["trainingMask"].endswith(".tif"))
                 self.assertEqual(result["cropInfo"]["companionMaskFormat"], "tif")
-                with self.assertRaisesRegex(ValueError, "Hãy chọn TIFF/BigTIFF"):
+                with self.assertRaisesRegex(ValueError, "Please select TIFF/BigTIFF"):
                     export_manual_project(project, root, root, output_name="too_large_png", export_format="png")
 
     def test_tiled_failure_keeps_existing_publication(self):
@@ -142,7 +142,7 @@ class TestTiledManualExport(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             project = self._fixture(root)
             with mock.patch.dict(os.environ, {"IMAGE_ALIGNMENT_MAX_TILED_DIMENSION": "100"}):
-                with self.assertRaisesRegex(ValueError, "giới hạn chiều"):
+                with self.assertRaisesRegex(ValueError, "dimension limit"):
                     export_manual_project_tiled(project, root, root, output_name="dimension", memory_budget_bytes=8 * 1024 * 1024)
             with mock.patch.dict(os.environ, {"IMAGE_ALIGNMENT_MAX_TILED_PIXELS": "100"}):
                 with self.assertRaisesRegex(ValueError, "pixels"):
@@ -152,7 +152,7 @@ class TestTiledManualExport(unittest.TestCase):
                     export_manual_project_tiled(project, root, root, output_name="tiles", memory_budget_bytes=8 * 1024 * 1024, tile_size=64)
             disk = mock.Mock(free=1)
             with mock.patch("backend.manual_export.shutil.disk_usage", return_value=disk):
-                with self.assertRaisesRegex(OSError, "dung lượng"):
+                with self.assertRaisesRegex(OSError, "capacity"):
                     export_manual_project_tiled(project, root, root, output_name="disk", memory_budget_bytes=8 * 1024 * 1024)
 
 

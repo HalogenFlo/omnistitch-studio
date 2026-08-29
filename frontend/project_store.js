@@ -1,7 +1,7 @@
 /**
- * Chức năng: Quản lý Project Store, Revision Tracking, Autosave & Persistent Command History Journal
- * Lí do tạo: Đáp ứng chuẩn Schema Section 5, 10, 11, 12, 13 trong Implementation Plan
- * Đường dẫn: tool/image_alignment/frontend/project_store.js
+ * Feature: Project store state management, revision tracking, and command undo/redo history
+ * Purpose: Complies with project architecture schemas and persistent specifications
+ * Path: tool/image_alignment/frontend/project_store.js
  */
 
 const ProjectStore = (function () {
@@ -36,11 +36,11 @@ const ProjectStore = (function () {
                     manual: { x: 0, y: 0, scale: 0.2 },
                     auto: { center: [0.5, 0.5], zoom: null, rotation: 0, sourceKey: null }
                 },
-                selection: [], // mảng id layer được chọn
+                selection: [], // array of selected layer IDs
                 folderName: '',
                 updatedAt: new Date().toISOString(),
                 focusRegions: [], // FocusRegion items
-                maskRegions: [],  // MaskRegion items (cọ xóa / khôi phục)
+                maskRegions: [],  // MaskRegion items (erase / restore brush)
                 cropRegion: null, // Committed CropRegion
                 cropDraft: null,  // Transient CropRegion being edited
                 cropSettings: {

@@ -20,13 +20,13 @@ class TestPatchInspector(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         
-        # Tạo 1 ảnh nét (chứa nhiều chi tiết sắc cạnh)
+        # Create sharp image with high-frequency details
         sharp_img = np.zeros((400, 400, 3), dtype=np.uint8)
         for i in range(0, 400, 20):
             cv2.rectangle(sharp_img, (i, i), (i + 10, i + 10), (255, 255, 255), -1)
             cv2.line(sharp_img, (i, 0), (i, 400), (200, 100, 50), 2)
             
-        # Tạo 1 ảnh mờ (Gaussian blur của ảnh nét)
+        # Create blurred image via Gaussian filter
         blur_img = cv2.GaussianBlur(sharp_img, (25, 25), 0)
 
         self.sharp_path = os.path.join(self.temp_dir, "sharp.png")
@@ -36,7 +36,7 @@ class TestPatchInspector(unittest.TestCase):
         cv2.imwrite(self.blur_path, cv2.cvtColor(blur_img, cv2.COLOR_RGB2BGR))
 
     def test_sharp_vs_blur_score(self):
-        # 2 layer chồng lên nhau ở cùng tọa độ (0, 0)
+        # 2 overlapping layers at coordinate (0, 0)
         layer_sharp = ProjectLayer(
             id="layer_sharp",
             sourceId="sharp.png",
@@ -59,7 +59,7 @@ class TestPatchInspector(unittest.TestCase):
             layers=[layer_sharp, layer_blur]
         )
 
-        # Inspect vùng worldRect [150, 150, 100, 100]
+        # Inspect worldRect [150, 150, 100, 100]
         res = inspect_patches_at_world_rect(
             project_state=project,
             world_rect=[150, 150, 100, 100],
@@ -68,7 +68,7 @@ class TestPatchInspector(unittest.TestCase):
         )
 
         self.assertEqual(len(res["patches"]), 2)
-        # Ảnh nét phải có điểm sharpness cao hơn ảnh mờ
+        # Sharp image must have higher sharpness score than blurred image
         patch_sharp = next(p for p in res["patches"] if p["layerId"] == "layer_sharp")
         patch_blur = next(p for p in res["patches"] if p["layerId"] == "layer_blur")
         

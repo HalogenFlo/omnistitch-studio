@@ -1,7 +1,7 @@
 """
-Chức năng: Render Server-side Full-Resolution WSI từ Manual Project State
-Lí do tạo: Không xuất qua canvas base64 trên browser để tránh crash RAM, render theo tile/chunk chất lượng gốc
-Đường dẫn: tool/image_alignment/backend/manual_export.py
+Feature: Server-side full-resolution mosaic rendering from project state
+Purpose: Renders in memory-budgeted chunks to avoid browser canvas limits and memory exhaustion
+Path: tool/image_alignment/backend/manual_export.py
 """
 
 import os
@@ -37,7 +37,7 @@ def get_max_memory_mb():
         return 8192
 
 def calculate_project_bounding_box(project: ProjectState) -> Tuple[int, int, int, int]:
-    """Tính toán bounding box tổng [min_x, min_y, max_x, max_y] của toàn bộ các layer visible"""
+    """Calculates total bounding box [min_x, min_y, max_x, max_y] for all visible layers"""
     all_corners = []
     
     for layer in project.layers:
@@ -176,7 +176,7 @@ def _warp_layer_for_tile(layer, workspace_root, tile_world_bounds, tile_shape, m
     estimated = tile_bytes + roi_pixels * 32
     if estimated > memory_budget_bytes:
         raise MemoryError(
-            f"Source ROI {sx2 - sx1}x{sy2 - sy1} làm working set {estimated} bytes vượt budget {memory_budget_bytes} bytes"
+            f"Source ROI {sx2 - sx1}x{sy2 - sy1} makes working set {estimated} bytes exceed budget {memory_budget_bytes} bytes"
         )
     stats["maxSourceRoiPixels"] = max(stats["maxSourceRoiPixels"], roi_pixels)
     stats["maxEstimatedWorkingBytes"] = max(stats["maxEstimatedWorkingBytes"], estimated)
@@ -230,7 +230,7 @@ def _render_manual_tile(
     )
     tile_bytes = ext_w * ext_h * 80
     if tile_bytes > memory_budget_bytes:
-        raise MemoryError(f"Tile working set {tile_bytes} bytes vượt budget {memory_budget_bytes} bytes")
+        raise MemoryError(f"Tile working set {tile_bytes} bytes exceed budget {memory_budget_bytes} bytes")
     stats["maxExpandedTilePixels"] = max(stats["maxExpandedTilePixels"], ext_w * ext_h)
     stats["maxEstimatedWorkingBytes"] = max(stats["maxEstimatedWorkingBytes"], tile_bytes)
     composite = np.zeros((ext_h, ext_w, 4), dtype=np.float32)
@@ -339,12 +339,12 @@ def render_manual_wsi_composite(
 
     MAX_DIM = 45000
     if canvas_w > MAX_DIM or canvas_h > MAX_DIM:
-        raise ValueError(f"Canvas quá lớn: {canvas_w}x{canvas_h} vượt giới hạn {MAX_DIM}px")
+        raise ValueError(f"Canvas quá lớn: {canvas_w}x{canvas_h} exceeds limit {MAX_DIM}px")
     max_memory_mb = get_max_memory_mb()
     estimated_bytes = canvas_w * canvas_h * 32
     if estimated_bytes > max_memory_mb * 1024 * 1024:
         raise MemoryError(
-            f"Render cần khoảng {estimated_bytes / (1024 * 1024):.0f} MB, vượt budget {max_memory_mb} MB"
+            f"Render cần khoảng {estimated_bytes / (1024 * 1024):.0f} MB, exceed budget {max_memory_mb} MB"
         )
 
     # Composite RGBA (Float32 để hòa trộn chính xác)
@@ -611,7 +611,7 @@ def export_manual_project_tiled(
     os.makedirs(output_dir, exist_ok=True)
     folder_name = output_name or project.folderName or "manual_wsi"
     if not folder_name or os.path.basename(folder_name) != folder_name:
-        raise ValueError("Tên output không hợp lệ")
+        raise ValueError("Tên output is invalid")
     target_ext = target_ext.lower().lstrip('.')
     if target_ext not in ("tif", "tiff"):
         raise ValueError("Tiled manual export chỉ hỗ trợ TIFF/BigTIFF")
@@ -619,14 +619,14 @@ def export_manual_project_tiled(
     width = output_bounds[2] - output_bounds[0]
     height = output_bounds[3] - output_bounds[1]
     if width <= 0 or height <= 0:
-        raise ValueError("Output bounds không hợp lệ")
+        raise ValueError("Output bounds is invalid")
     max_dimension = max(1, int(os.environ.get("IMAGE_ALIGNMENT_MAX_TILED_DIMENSION", "100000")))
     max_pixels = max(1, int(os.environ.get("IMAGE_ALIGNMENT_MAX_TILED_PIXELS", "2000000000")))
     if width > max_dimension or height > max_dimension:
-        raise ValueError(f"Tiled output {width}x{height} vượt giới hạn chiều {max_dimension}px")
+        raise ValueError(f"Tiled output {width}x{height} vượt dimension limit {max_dimension}px")
     output_pixels = width * height
     if output_pixels > max_pixels:
-        raise ValueError(f"Tiled output {output_pixels} pixels vượt giới hạn {max_pixels} pixels")
+        raise ValueError(f"Tiled output {output_pixels} pixels exceeds limit {max_pixels} pixels")
     budget = memory_budget_bytes
     if budget is None:
         budget = int(os.environ.get(
@@ -650,12 +650,12 @@ def export_manual_project_tiled(
     tile_count = int(math.ceil(width / actual_tile) * math.ceil(height / actual_tile))
     max_tiles = max(1, int(os.environ.get("IMAGE_ALIGNMENT_MAX_TILED_TILES", "10000000")))
     if tile_count > max_tiles:
-        raise ValueError(f"Tiled output cần {tile_count} tiles, vượt giới hạn {max_tiles}")
+        raise ValueError(f"Tiled output cần {tile_count} tiles, exceeds limit {max_tiles}")
     # Account for render memmaps, TIFF/mask output, and a conservative DZI allowance.
     required_disk = output_pixels * (3 * (channels + 1) + 2) + 256 * 1024 * 1024
     free_disk = shutil.disk_usage(output_dir).free
     if required_disk > free_disk:
-        raise OSError(f"Không đủ dung lượng export: cần khoảng {required_disk} bytes, còn {free_disk} bytes")
+        raise OSError(f"Không đủ capacity export: cần khoảng {required_disk} bytes, còn {free_disk} bytes")
     stage_root = tempfile.mkdtemp(prefix=f".{folder_name}.tiled.", dir=output_dir)
     image_map_path = os.path.join(stage_root, "render.dat")
     mask_map_path = os.path.join(stage_root, "mask.dat")
@@ -799,7 +799,7 @@ def export_manual_project(
     effective_cap = min(png_cap, memory_budget // 32)
     if output_pixels > effective_cap:
         raise ValueError(
-            f".{ext} output {output_pixels} pixels không hỗ trợ streaming; giới hạn hiệu dụng {effective_cap} pixels. Hãy chọn TIFF/BigTIFF."
+            f".{ext} output {output_pixels} pixels không hỗ trợ streaming; giới hạn hiệu dụng {effective_cap} pixels. Please select TIFF/BigTIFF."
         )
 
     composite_img, training_mask, crop_info = render_manual_wsi_composite(

@@ -1,8 +1,8 @@
 /**
- * Chức năng: Canva-Style Manual Interactive Canvas Engine
- * Lí do tạo: Cung cấp trải nghiệm chỉnh ghép ảnh WSI trực quan (Move, Rotate, Scale, Layer, Color Adjustments)
- *            Hỗ trợ chọn vùng nét tùy ý (Rectangle, Polygon, Lasso), Cọ xóa nền (Brush Exclude/Restore) và Crop Tool.
- * Đường dẫn: tool/image_alignment/frontend/canvas_engine.js
+ * Feature: Canva-Style Manual Interactive Canvas Engine
+ * Purpose: Provides intuitive visual manipulation for mosaics (Move, Rotate, Scale, Layer, Color Adjustments)
+ *            Supports interactive clarity inspection (Rectangle, Polygon, Lasso), Invisible Brush, and Crop Viewport.
+ * Path: tool/image_alignment/frontend/canvas_engine.js
  */
 
 const CanvasEngine = (function () {
@@ -24,7 +24,7 @@ const CanvasEngine = (function () {
                 scale: 0.2 // Tỉ lệ zoom thế giới sang màn hình
             };
 
-            // Chế độ công cụ vẽ hiện tại: 'select' | 'rect' | 'polygon' | 'lasso' | 'brush_exclude' | 'brush_restore' | 'crop'
+            // Current tool mode: 'select' | 'rect' | 'polygon' | 'lasso' | 'brush_exclude' | 'brush_restore' | 'crop'
             this.toolMode = 'select';
             this.brushRadius = 24; // CSS pixels
             this.spacePressed = false;
@@ -802,7 +802,7 @@ const CanvasEngine = (function () {
                 ctx.restore();
             }
 
-            // 4. Brush Drawing Live Draft (Tô cọ xóa / khôi phục hiển thị trực tiếp ngay khi vuốt chuột)
+            // 4. Brush Drawing Live Draft (Tô erase / restore brush hiển thị trực tiếp ngay khi vuốt chuột)
             if ((this.toolMode === 'brush_exclude' || this.toolMode === 'brush_restore') && this.brushDraftPoints.length > 0) {
                 const isExclude = (this.toolMode === 'brush_exclude');
                 const radiusScreen = this.brushRadius;

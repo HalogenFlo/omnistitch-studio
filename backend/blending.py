@@ -1,13 +1,13 @@
-# Chức năng: Hòa trộn dòng ROI tích hợp Cạnh Tranh Độ Nét Linh Hoạt (Adaptive Focus-Stacking & Sharpness Competition)
-# Lí do tạo: Tự động phát hiện và ưu tiên tuyệt đối lấy vùng sắc nét nhất giữa các tile chồng lặp (nếu Tile A mờ mà Tile B rõ thì linh hoạt lấy phần của Tile B và ngược lại)
-# Đường dẫn: tool/image_alignment/backend/blending.py
+# Feature: Hòa trộn dòng ROI tích hợp Cạnh Tranh Độ Nét Linh Hoạt (Adaptive Focus-Stacking & Sharpness Competition)
+# Purpose: Automatically detects and prioritizes the sharpest focal slices between overlapping tiles (adaptive focus stacking)
+# Path: tool/image_alignment/backend/blending.py
 
 import cv2
 import numpy as np
 
 def compute_local_sharpness_map(img_rgb, kernel_size=15):
     """
-    Tính toán bản đồ năng lượng độ sắc nét vi thể cục bộ (Local Sharpness / Focus Map)
+    Calculates localized microscopic sharpness/focus map
     Kết hợp 3 tiêu chí:
     1. Tenengrad Gradient (Độ tương phản biên vi thể)
     2. Modified Laplacian (Độ sắc nét nhân tế bào)

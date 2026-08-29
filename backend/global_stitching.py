@@ -1,6 +1,6 @@
-# Chức năng: Xây dựng đồ thị ghép nối, Cây khung cực đại (MST) và Đa thành phần liên thông (Multi-Component MST)
-# Lí do tạo: Triệt tiêu tích lũy sai số (drift) và đảm bảo 100% các mảnh tile (kể cả mô chưa nhuộm / tương phản thấp) được định vị chính xác
-# Đường dẫn: tool/image_alignment/backend/global_stitching.py
+# Feature: Constructs stitching adjacency graph, Maximum Spanning Tree (MST), and multi-component alignment
+# Purpose: Eliminates cumulative spatial drift and ensures 100% accurate global tile placement
+# Path: tool/image_alignment/backend/global_stitching.py
 
 import cv2
 import numpy as np
@@ -22,7 +22,7 @@ class GlobalStitcher:
 
     def build_spanning_tree(self, confidence_matrix, root_idx=None):
         """
-        Xây dựng Maximum Spanning Tree (MST) dựa trên phân tích Thành Phần Liên Thông (Connected Components).
+        Constructs Maximum Spanning Tree (MST) based on Connected Components analysis.
         Tự động chọn Node trung tâm có bậc liên kết cao nhất làm Gốc (Root) để giảm thiểu sai số tích lũy.
         """
         n = self.n_images
