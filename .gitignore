@@ -1,0 +1,32 @@
+# ==========================================
+# WSI Stitching Studio - .gitignore
+# ==========================================
+
+# Data directories (excluding sample_data)
+data/
+uploads/
+*.dzi
+*_files/
+*.tif
+*.tiff
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# IDE & OS Artifacts
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

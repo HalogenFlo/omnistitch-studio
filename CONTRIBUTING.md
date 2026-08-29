@@ -1,0 +1,29 @@
+# Contributing to WSI Stitching Studio
+
+Thank you for your interest in contributing to **WSI Stitching Studio**! We welcome contributions from researchers, medical imaging engineers, and developers worldwide.
+
+## Code of Conduct
+This project adheres to the Contributor Covenant [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+
+## How Can I Contribute?
+1. **Reporting Bugs**: Check the GitHub issue tracker before filing a new bug report. Provide detailed reproduction steps and slide metadata.
+2. **Suggesting Enhancements**: Open a Feature Request explaining the use case (e.g., support for new microscope formats or GPU-accelerated blending).
+3. **Pull Requests**:
+   - Fork the repository and create your branch from `main`.
+   - Ensure your code follows PEP 8 conventions.
+   - Run the test suite:
+     ```bash
+     python -m unittest discover -s tests
+     ```
+   - Submit your pull request with a descriptive title and linked issue.
+
+## Development Setup
+```bash
+git clone https://github.com/Phatjhhoq8/wsi-stitching-studio.git
+cd wsi-stitching-studio
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python server.py
+```
+Open `http://localhost:5000` in your web browser.

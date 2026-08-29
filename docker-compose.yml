@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  wsi-studio:
+    build: .
+    container_name: wsi-stitching-studio
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+      - ./sample_data:/app/sample_data
+    environment:
+      - PORT=5000
+      - IMAGE_ALIGNMENT_MAX_MEMORY_MB=8192
+    restart: unless-stopped
