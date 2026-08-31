@@ -27,9 +27,9 @@ def get_max_memory_mb():
     try:
         import psutil
         avail_mb = int(psutil.virtual_memory().available * 0.75 / (1024 * 1024))
-        return max(8192, avail_mb)
+        return max(64, avail_mb)
     except Exception:
-        return 8192
+        return 2048
 
 
 def _output_coordinate_metadata(bbox, crop_x=0, crop_y=0):

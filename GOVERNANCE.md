@@ -1,7 +1,7 @@
 # Project Governance & Maintainership Policy
 
 ## 1. Governance Model
-WSI Stitching Studio is an open-source project managed under a **Maintainer-Driven Governance Model**. The goal is to provide a transparent, meritocratic, and welcoming environment for contributors, researchers, and developers in digital pathology and computer vision.
+OmniStitch Studio is an open-source project managed under a **Maintainer-Driven Governance Model**. The goal is to provide a transparent and welcoming environment for contributors, researchers, and developers in microscopy and computer vision.
 
 ## 2. Roles & Responsibilities
 
@@ -23,7 +23,7 @@ WSI Stitching Studio is an open-source project managed under a **Maintainer-Driv
 ## 3. Decision-Making Process
 - **Consensus-Seeking**: Technical proposals and architecture changes are discussed publicly on GitHub Issues and Pull Requests.
 - **Lazy Consensus**: If no maintainer objects within 72 hours of a non-breaking proposal, it is considered approved.
-- **Breaking Changes**: Major changes affecting API endpoints, homography coordinate contracts, or file schemas require approval from at least two core maintainers.
+- **Breaking Changes**: Major changes affecting API endpoints, coordinate contracts, or file schemas require public review. While the project has one maintainer, the primary maintainer records the decision and rationale in an issue or pull request. If two or more maintainers are active, approval from at least two maintainers is required.
 
 ## 4. Release Cadence
 - **Patch Releases (`x.y.Z`)**: Issued as needed for bug fixes, performance improvements, and security patches.

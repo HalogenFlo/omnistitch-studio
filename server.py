@@ -15,9 +15,10 @@ from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
-# Ensure backend module is importable
+# Ensure backend module is importable. Installed wheels keep writable data out of site-packages.
 tool_dir = os.path.dirname(os.path.abspath(__file__))
-workspace_dir = tool_dir
+default_workspace = tool_dir if os.path.isdir(os.path.join(tool_dir, ".git")) else os.path.join(os.path.expanduser("~"), ".omnistitch-studio")
+workspace_dir = os.path.abspath(os.environ.get("OMNISTITCH_WORKSPACE_DIR", default_workspace))
 for p in [workspace_dir, tool_dir]:
     if p not in sys.path:
         sys.path.insert(0, p)
@@ -27,20 +28,21 @@ if "IMAGE_ALIGNMENT_MAX_MEMORY_MB" not in os.environ:
     try:
         import psutil
         avail_mb = int(psutil.virtual_memory().available * 0.75 / (1024 * 1024))
-        os.environ["IMAGE_ALIGNMENT_MAX_MEMORY_MB"] = str(max(8192, avail_mb))
+        os.environ["IMAGE_ALIGNMENT_MAX_MEMORY_MB"] = str(max(64, avail_mb))
     except Exception:
-        os.environ["IMAGE_ALIGNMENT_MAX_MEMORY_MB"] = "8192"
+        os.environ["IMAGE_ALIGNMENT_MAX_MEMORY_MB"] = "2048"
 
 import cv2
 from backend.io_utils import read_image, save_tiff, create_thumbnail, get_image_metadata
 from backend.pipeline import run_wsi_stitching_pipeline
 
-PORT = int(os.environ.get("PORT", 5050))
+PORT = int(os.environ.get("PORT", 5000))
+HOST = os.environ.get("HOST", "127.0.0.1")
 WORKSPACE_DIR = workspace_dir
 NHUOM_MO_DIR = os.path.join(WORKSPACE_DIR, "NhuomMo")
 DATA_DIR = os.path.join(WORKSPACE_DIR, "data")
 OUTPUTS_DIR = os.path.join(DATA_DIR, "result")
-UPLOADS_DIR = os.path.join(tool_dir, "uploads")
+UPLOADS_DIR = os.path.join(WORKSPACE_DIR, "uploads")
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -1025,15 +1027,13 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_json({"error": str(e)}, status=500)
 
-PORT = 5050
-
 def run(server_class=ThreadingHTTPServer, handler_class=AlignmentToolRequestHandler, port=PORT):
     for p in [port, 5051, 8080, 8888, 3000]:
         try:
-            server_address = ('127.0.0.1', p)
+            server_address = (HOST, p)
             httpd = server_class(server_address, handler_class)
             print(f"==================================================")
-            print(f"  WSI STITCHING STUDIO SERVER ĐANG CHẠY")
+            print(f"  OMNISTITCH STUDIO SERVER ĐANG CHẠY")
             print(f"  URL: http://localhost:{p}")
             print(f"  Output Directory: data/output/")
             print(f"==================================================")
@@ -1042,5 +1042,10 @@ def run(server_class=ThreadingHTTPServer, handler_class=AlignmentToolRequestHand
         except Exception as e:
             print(f"Port {p} không khả dụng ({e}), thử port tiếp theo...")
 
-if __name__ == '__main__':
+def main():
+    """Launch the local OmniStitch Studio HTTP server."""
     run()
+
+
+if __name__ == '__main__':
+    main()

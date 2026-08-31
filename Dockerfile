@@ -16,6 +16,7 @@ COPY . .
 EXPOSE 5000
 
 ENV PORT=5000
+ENV HOST=0.0.0.0
 ENV PYTHONUNBUFFERED=1
 
 CMD ["python", "server.py"]

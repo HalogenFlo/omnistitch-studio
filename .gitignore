@@ -30,3 +30,7 @@ env/
 .DS_Store
 Thumbs.db
 *.log
+
+# Locally rendered JOSS artifacts
+paper/paper.pdf
+paper/jats/

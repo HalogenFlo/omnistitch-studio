@@ -1,0 +1,33 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Provide minimal steps and a redistributable sample when possible.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: Operating system, Python version, RAM, and installation method.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Data safety
+      options:
+        - label: I removed patient-identifying, confidential, and restricted data.
+          required: true

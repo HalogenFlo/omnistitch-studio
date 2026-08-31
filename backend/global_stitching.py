@@ -1,5 +1,5 @@
 # Feature: Constructs stitching adjacency graph, Maximum Spanning Tree (MST), and multi-component alignment
-# Purpose: Eliminates cumulative spatial drift and ensures 100% accurate global tile placement
+# Purpose: Propagates pairwise transforms through a confidence-weighted spanning forest
 # Path: tool/image_alignment/backend/global_stitching.py
 
 import cv2
