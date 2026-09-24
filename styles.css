@@ -1406,7 +1406,8 @@ input[type=range]::-webkit-slider-thumb {
     border-left: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
     z-index: 50;
     transition: var(--transition);
 }
@@ -1450,8 +1451,8 @@ input[type=range]::-webkit-slider-thumb {
     gap: 0.5rem;
     background: rgba(255, 255, 255, 0.01);
     flex-shrink: 0;
-    max-height: 38vh;
-    overflow-y: auto;
+    max-height: none;
+    overflow-y: visible;
 }
 
 .form-label-xs {
@@ -2661,4 +2662,26 @@ input[type=range]::-webkit-slider-thumb {
         max-height: 52vh;
         overflow-y: auto;
     }
+}
+
+/* Polygon Mode for Active Region Box: Hide rectangle frame and 4 corner handles */
+.active-region-box.is-polygon-mode {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    pointer-events: none;
+}
+.active-region-box.is-polygon-mode .region-box-header {
+    pointer-events: auto;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(34, 211, 238, 0.6);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+.active-region-box.is-polygon-mode .region-handle {
+    display: none !important;
+}
+
+#regionBatchPanel {
+    display: none;
 }

@@ -1045,6 +1045,44 @@
             }
         }
 
+        // 2b. Draw pinned inspected region (Polygon / Lasso)
+        if (inspectorState.isPinned && inspectorState.currentRegion) {
+            const curReg = inspectorState.currentRegion;
+            const isPoly = (curReg.shapeType === 'polygon' || curReg.shapeType === 'lasso' || curReg.shapeType === 'crop_polygon' || curReg.shapeType === 'crop_lasso');
+            if (isPoly && curReg.pointsWorld && curReg.pointsWorld.length >= 3) {
+                const polyPts = curReg.pointsWorld.map(osdWorldToScreen).filter(Boolean);
+                if (polyPts.length >= 3) {
+                    const isCropTool = Boolean(curReg.shapeType && curReg.shapeType.startsWith('crop'));
+                    const polyColor = isCropTool ? '#f59e0b' : '#22d3ee';
+                    ctx.save();
+                    ctx.strokeStyle = polyColor;
+                    ctx.fillStyle = isCropTool ? 'rgba(245, 158, 11, 0.22)' : 'rgba(34, 211, 238, 0.20)';
+                    ctx.lineWidth = 2.5;
+                    ctx.lineJoin = 'round';
+                    ctx.setLineDash([6, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(polyPts[0][0], polyPts[0][1]);
+                    for (let i = 1; i < polyPts.length; i++) {
+                        ctx.lineTo(polyPts[i][0], polyPts[i][1]);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Draw vertices for polygon
+                    if (curReg.shapeType.includes('polygon')) {
+                        polyPts.forEach((pt, idx) => {
+                            ctx.beginPath();
+                            ctx.arc(pt[0], pt[1], idx === 0 ? 5.5 : 4, 0, Math.PI * 2);
+                            ctx.fillStyle = idx === 0 ? '#ec4899' : polyColor;
+                            ctx.fill();
+                        });
+                    }
+                    ctx.restore();
+                }
+            }
+        }
+
         // 3. Draw interactive drawing draft
         const points = osdDrawState.pointsWorld.map(osdWorldToScreen).filter(Boolean);
         const current = osdDrawState.currentWorld ? osdWorldToScreen(osdDrawState.currentWorld) : null;
@@ -1152,7 +1190,7 @@
                 if (osdDrawState.pointsWorld.length >= 3) {
                     const firstScreen = osdWorldToScreen(osdDrawState.pointsWorld[0]);
                     const point = eventPoint(event);
-                    if (firstScreen && Math.hypot(point[0] - firstScreen[0], point[1] - firstScreen[1]) <= 16) {
+                    if (firstScreen && Math.hypot(point[0] - firstScreen[0], point[1] - firstScreen[1]) <= 24) {
                         commitOsdShape(tool === 'crop_polygon' ? 'crop_polygon' : 'polygon', osdDrawState.pointsWorld);
                         clearOsdDrawingDraft();
                         return;
@@ -1256,12 +1294,23 @@
         const minX = Math.min(...xs), minY = Math.min(...ys);
         const maxX = Math.max(...xs), maxY = Math.max(...ys);
 
+        const isPoly = (region.shapeType === 'polygon' || region.shapeType === 'lasso' || region.shapeType === 'crop_polygon' || region.shapeType === 'crop_lasso');
         DOM.activeRegionBox.style.display = 'block';
         DOM.activeRegionBox.style.left = `${Math.round(minX)}px`;
         DOM.activeRegionBox.style.top = `${Math.round(minY)}px`;
         DOM.activeRegionBox.style.width = `${Math.max(1, Math.round(maxX - minX))}px`;
         DOM.activeRegionBox.style.height = `${Math.max(1, Math.round(maxY - minY))}px`;
-        DOM.regionBoxTitle.textContent = `Inspected Region: ${Math.round(region.boundingRect[2])} × ${Math.round(region.boundingRect[3])} px`;
+
+        const handles = DOM.activeRegionBox.querySelectorAll('.region-handle');
+        if (isPoly) {
+            DOM.activeRegionBox.classList.add('is-polygon-mode');
+            handles.forEach(h => h.style.display = 'none');
+            DOM.regionBoxTitle.textContent = `⬡ ${region.shapeType.toUpperCase()}: ${Math.round(region.boundingRect[2])} × ${Math.round(region.boundingRect[3])} px`;
+        } else {
+            DOM.activeRegionBox.classList.remove('is-polygon-mode');
+            handles.forEach(h => h.style.display = 'block');
+            DOM.regionBoxTitle.textContent = `Inspected Region: ${Math.round(region.boundingRect[2])} × ${Math.round(region.boundingRect[3])} px`;
+        }
 
         renderOsdDrawingDraft();
     }
@@ -1919,6 +1968,9 @@
             if (state.layers.some(layer => layer.id === current)) DOM.batchFocusLayerSelect.value = current;
         }
         const hasSelection = selected.all.length > 0;
+        if (DOM.regionBatchPanel) {
+            DOM.regionBatchPanel.style.display = hasSelection ? 'flex' : 'none';
+        }
         [DOM.btnBatchLock, DOM.btnBatchUnlock, DOM.btnGroupRegions, DOM.btnUngroupRegions, DOM.btnBatchDelete]
             .filter(Boolean).forEach(button => button.disabled = !hasSelection);
         if (DOM.btnBatchApplyLayer) DOM.btnBatchApplyLayer.disabled = selected.focus.length === 0;
