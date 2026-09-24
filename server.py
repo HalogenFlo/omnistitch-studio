@@ -36,7 +36,7 @@ import cv2
 from backend.io_utils import read_image, save_tiff, create_thumbnail, get_image_metadata
 from backend.pipeline import run_wsi_stitching_pipeline
 
-PORT = int(os.environ.get("PORT", 5000))
+PORT = int(os.environ.get("PORT", 5051))
 HOST = os.environ.get("HOST", "127.0.0.1")
 WORKSPACE_DIR = workspace_dir
 NHUOM_MO_DIR = os.path.join(WORKSPACE_DIR, "NhuomMo")
@@ -1032,11 +1032,19 @@ def run(server_class=ThreadingHTTPServer, handler_class=AlignmentToolRequestHand
         try:
             server_address = (HOST, p)
             httpd = server_class(server_address, handler_class)
+            server_url = f"http://localhost:{p}"
             print(f"==================================================")
             print(f"  OMNISTITCH STUDIO SERVER ĐANG CHẠY")
-            print(f"  URL: http://localhost:{p}")
+            print(f"  URL: {server_url}")
             print(f"  Output Directory: data/output/")
             print(f"==================================================")
+            def _open_browser():
+                try:
+                    import webbrowser
+                    webbrowser.open(server_url)
+                except Exception:
+                    pass
+            threading.Timer(0.8, _open_browser).start()
             httpd.serve_forever()
             break
         except Exception as e:
