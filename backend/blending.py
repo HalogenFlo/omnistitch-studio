@@ -51,6 +51,77 @@ def compute_local_sharpness_map(img_rgb, kernel_size=15):
     return sharpness_norm
 
 
+def equalize_tile_illumination(source_images):
+    """
+    Tự động chuẩn hóa màu nền và cân bằng phơi sáng giữa các ô ảnh kính hiển vi (Microscopy Flat-Field / Gain Normalization).
+    - Ước lượng màu nền kính hiển vi (phân vị 95% của các pixel sáng).
+    - Cân bằng màu nền của tất cả các tile về cùng một mức trung vị chuẩn.
+    - Triệt tiêu hoàn toàn sự chênh lệch màu nền xám sáng / xám tối / vàng ngà giữa các tile.
+    """
+    if not source_images or len(source_images) <= 1:
+        return source_images
+
+    # 1. Thu thập màu nền của từng ô ảnh
+    bg_levels = {}
+    for i, img in source_images.items():
+        if img is None or img.size == 0:
+            continue
+
+        has_alpha = (img.ndim == 3 and img.shape[2] == 4)
+        if has_alpha:
+            rgb = img[:, :, :3]
+            alpha_mask = img[:, :, 3] > 30
+        else:
+            rgb = img
+            alpha_mask = np.ones(img.shape[:2], dtype=bool)
+
+        if np.count_nonzero(alpha_mask) < 50:
+            continue
+
+        valid_pixels = rgb[alpha_mask]
+        p95 = np.percentile(valid_pixels, 95, axis=0)
+        bg_levels[i] = p95
+
+    if len(bg_levels) <= 1:
+        return source_images
+
+    # 2. Tính mức nền tham chiếu trung vị (Reference Background)
+    all_p95 = np.array(list(bg_levels.values()), dtype=np.float32)
+    ref_bg = np.median(all_p95, axis=0)
+
+    # Nếu ảnh có nền quá tối (ví dụ huỳnh quang < 70), không ép tăng sáng kiểu brightfield
+    if np.mean(ref_bg) < 70.0:
+        return source_images
+
+    # 3. Điều chỉnh gain cho từng tile để đưa màu nền về ref_bg đồng nhất
+    equalized_images = {}
+    for i, img in source_images.items():
+        if i not in bg_levels:
+            equalized_images[i] = img
+            continue
+
+        tile_bg = bg_levels[i]
+        gains = ref_bg / np.maximum(tile_bg, 1.0)
+        gains = np.clip(gains, 0.70, 1.40)
+
+        if np.all(np.abs(gains - 1.0) < 0.015):
+            equalized_images[i] = img
+            continue
+
+        has_alpha = (img.ndim == 3 and img.shape[2] == 4)
+        if has_alpha:
+            rgb = img[:, :, :3].astype(np.float32)
+            adj_rgb = np.clip(rgb * gains[None, None, :], 0.0, 255.0).astype(np.uint8)
+            new_img = np.dstack([adj_rgb, img[:, :, 3]])
+        else:
+            rgb = img.astype(np.float32)
+            new_img = np.clip(rgb * gains[None, None, :], 0.0, 255.0).astype(np.uint8)
+
+        equalized_images[i] = new_img
+
+    return equalized_images
+
+
 class FastStreamingBlender:
     """
     Bộ hòa trộn dòng ROI tích hợp Voronoi Adaptive Seam Blending:
@@ -159,8 +230,11 @@ class FastStreamingBlender:
         # Tính toán độ chênh lệch chất lượng giữa tile mới và canvas hiện tại
         diff = quality_metric - roi_dist
         
-        # Chuyển tiếp mượt dạng Sin trong dải hẹp 16px quanh ranh giới Voronoi
-        t = np.clip(diff / 16.0, -1.0, 1.0)
+        # Chuyển tiếp mượt dạng Sin với dải chuyển tiếp thích nghi (Adaptive Seam Bandwidth)
+        # Thay vì cố định 16px gây lộ vết cắt sắc cạnh, mở rộng dải chuyển tiếp dựa trên kích thước tile
+        min_dim = float(min(roi_w, roi_h))
+        seam_width = max(2.0, min(80.0, min_dim * 0.18))
+        t = np.clip(diff / seam_width, -1.0, 1.0)
         alpha = 0.5 + 0.5 * np.sin(t * (np.pi / 2.0))
         
         # Nếu canvas chưa có tile nào trước đó: pixel mới chiếm 100%

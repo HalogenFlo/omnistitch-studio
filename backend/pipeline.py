@@ -12,7 +12,7 @@ from backend.io_utils import read_image, save_tiff
 from backend.feature_engine import FeatureEngine
 from backend.matcher import FeatureMatcher
 from backend.global_stitching import GlobalStitcher
-from backend.blending import FastStreamingBlender
+from backend.blending import FastStreamingBlender, equalize_tile_illumination
 from backend.postprocessing import find_largest_inscribed_rectangle
 from backend.wsi_exporter import export_wsi_multiformat
 
@@ -224,6 +224,9 @@ def run_wsi_stitching_pipeline(
 
     # 5. Tích lũy và hòa trộn Voronoi Adaptive Seam Blending
     report(75, f"Initializing Gigapixel Canvas ({canvas_w}x{canvas_h} px)...")
+    report(72, "Tự động cân bằng sáng và chuẩn hóa nền kính hiển vi...")
+    source_images = equalize_tile_illumination(source_images)
+
     blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode, focus_stacking=True)
 
     for i, img in source_images.items():
