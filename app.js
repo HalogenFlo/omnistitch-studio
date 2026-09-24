@@ -971,6 +971,83 @@
 
         const state = ProjectStore.getState();
 
+        // 0. Draw Applied Focus Regions directly on canvas (sharp slice overlay)
+        if (state.focusRegions && state.focusRegions.length > 0) {
+            state.focusRegions.forEach(fr => {
+                const pts = (fr.pointsWorld || []).map(osdWorldToScreen).filter(Boolean);
+                if (pts.length < 3) return;
+
+                const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+                const minX = Math.min(...xs), minY = Math.min(...ys);
+                const maxX = Math.max(...xs), maxY = Math.max(...ys);
+                const w = maxX - minX, h = maxY - minY;
+                if (w <= 0 || h <= 0) return;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(pts[0][0], pts[0][1]);
+                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+                ctx.closePath();
+
+                // Render cached sharp patch image if available
+                if (fr._cachedImg && fr._cachedImg.complete && fr._cachedImg.naturalWidth > 0) {
+                    ctx.save();
+                    ctx.clip();
+                    ctx.drawImage(fr._cachedImg, minX, minY, w, h);
+                    ctx.restore();
+                } else if (fr.imageDataUrl && !fr._loadingImg) {
+                    fr._loadingImg = true;
+                    const img = new Image();
+                    img.onload = () => {
+                        fr._cachedImg = img;
+                        fr._loadingImg = false;
+                        renderOsdDrawingDraft();
+                    };
+                    img.onerror = () => { fr._loadingImg = false; };
+                    img.src = fr.imageDataUrl;
+                } else if (fr.selectedLayerId && !fr._loadingImg) {
+                    fr._loadingImg = true;
+                    const layer = state.layers ? state.layers.find(l => l.id === fr.selectedLayerId) : null;
+                    if (layer && layer.sourcePath) {
+                        const img = new Image();
+                        img.onload = () => {
+                            fr._cachedImg = img;
+                            fr._loadingImg = false;
+                            renderOsdDrawingDraft();
+                        };
+                        img.onerror = () => { fr._loadingImg = false; };
+                        img.src = `/api/thumbnail?path=${encodeURIComponent(layer.sourcePath)}&size=512`;
+                    }
+                }
+
+                // Vibrant green neon border highlighting the applied sharp slice
+                ctx.beginPath();
+                ctx.moveTo(pts[0][0], pts[0][1]);
+                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+                ctx.closePath();
+                const isJustApplied = (inspectorState.justAppliedRegionId === fr.id);
+                ctx.strokeStyle = isJustApplied ? '#34d399' : '#10b981';
+                ctx.lineWidth = isJustApplied ? 3.5 : 2;
+                ctx.shadowColor = '#10b981';
+                ctx.shadowBlur = isJustApplied ? 16 : 6;
+                ctx.stroke();
+
+                // Applied badge label on top of region
+                const layer = state.layers ? state.layers.find(l => l.id === fr.selectedLayerId) : null;
+                const name = layer ? layer.sourceId : 'Applied Slice';
+                const label = `⭐ ${name.length > 18 ? name.substring(0, 16) + '...' : name}`;
+                ctx.font = 'bold 11px Inter, sans-serif';
+                const tw = ctx.measureText(label).width;
+                ctx.fillStyle = isJustApplied ? 'rgba(52, 211, 153, 0.95)' : 'rgba(16, 185, 129, 0.9)';
+                ctx.shadowBlur = 0;
+                ctx.fillRect(minX, Math.max(0, minY - 20), tw + 14, 18);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(label, minX + 6, Math.max(13, minY - 6));
+
+                ctx.restore();
+            });
+        }
+
         // 1. Draw persistent mask regions on OpenSeadragon
         if (state.maskRegions && state.maskRegions.length > 0) {
             state.maskRegions.forEach(mask => {
@@ -1049,7 +1126,7 @@
         if (inspectorState.isPinned && inspectorState.currentRegion) {
             const curReg = inspectorState.currentRegion;
             const isPoly = (curReg.shapeType === 'polygon' || curReg.shapeType === 'lasso' || curReg.shapeType === 'crop_polygon' || curReg.shapeType === 'crop_lasso');
-            if (isPoly && curReg.pointsWorld && curReg.pointsWorld.length >= 3) {
+            if (!curReg.selectedLayerId && isPoly && curReg.pointsWorld && curReg.pointsWorld.length >= 3) {
                 const polyPts = curReg.pointsWorld.map(osdWorldToScreen).filter(Boolean);
                 if (polyPts.length >= 3) {
                     const isCropTool = Boolean(curReg.shapeType && curReg.shapeType.startsWith('crop'));
@@ -1302,14 +1379,27 @@
         DOM.activeRegionBox.style.height = `${Math.max(1, Math.round(maxY - minY))}px`;
 
         const handles = DOM.activeRegionBox.querySelectorAll('.region-handle');
+        const state = ProjectStore.getState();
+        const appliedLayer = region.selectedLayerId ? (state.layers ? state.layers.find(l => l.id === region.selectedLayerId) : null) : null;
+
+        if (appliedLayer) {
+            DOM.activeRegionBox.classList.add('is-applied');
+            DOM.regionBoxTitle.innerHTML = `<i class="fa-solid fa-circle-check" style="color: #34d399"></i> Đã gán: <b>${appliedLayer.sourceId}</b>`;
+        } else {
+            DOM.activeRegionBox.classList.remove('is-applied');
+            if (isPoly) {
+                DOM.regionBoxTitle.textContent = `⬡ ${region.shapeType.toUpperCase()}: ${Math.round(region.boundingRect[2])} × ${Math.round(region.boundingRect[3])} px`;
+            } else {
+                DOM.regionBoxTitle.textContent = `Inspected Region: ${Math.round(region.boundingRect[2])} × ${Math.round(region.boundingRect[3])} px`;
+            }
+        }
+
         if (isPoly) {
             DOM.activeRegionBox.classList.add('is-polygon-mode');
             handles.forEach(h => h.style.display = 'none');
-            DOM.regionBoxTitle.textContent = `⬡ ${region.shapeType.toUpperCase()}: ${Math.round(region.boundingRect[2])} × ${Math.round(region.boundingRect[3])} px`;
         } else {
             DOM.activeRegionBox.classList.remove('is-polygon-mode');
             handles.forEach(h => h.style.display = 'block');
-            DOM.regionBoxTitle.textContent = `Inspected Region: ${Math.round(region.boundingRect[2])} × ${Math.round(region.boundingRect[3])} px`;
         }
 
         renderOsdDrawingDraft();
@@ -1724,14 +1814,49 @@
 
     function applyPatchAsFocusRegion(layerId) {
         if (!inspectorState.currentRegion) return;
+        const allPatches = [...(inspectorState.lastPatches || []), ...(lightboxState.patches || [])];
+        const targetPatch = allPatches.find(p => p.layerId === layerId);
+        const patchDataUrl = targetPatch ? targetPatch.imageDataUrl : null;
+        const regionWithImage = {
+            ...inspectorState.currentRegion,
+            imageDataUrl: patchDataUrl
+        };
+
         const newRegion = ProjectStore.setFocusRegion(
-            inspectorState.currentRegion,
+            regionWithImage,
             layerId,
             8
         );
+        if (newRegion && patchDataUrl) {
+            newRegion.imageDataUrl = patchDataUrl;
+            const img = new Image();
+            img.onload = () => {
+                newRegion._cachedImg = img;
+                renderOsdDrawingDraft();
+            };
+            img.src = patchDataUrl;
+        }
 
         if (inspectorState.currentRegion) {
             inspectorState.currentRegion.selectedLayerId = layerId;
+            inspectorState.currentRegion.imageDataUrl = patchDataUrl;
+        }
+
+        const state = ProjectStore.getState();
+        const layer = state.layers ? state.layers.find(l => l.id === layerId) : null;
+        const layerName = layer ? layer.sourceId : layerId;
+
+        // Immediate visual feedback & pulse animation
+        if (newRegion) {
+            inspectorState.justAppliedRegionId = newRegion.id;
+            updateActiveRegionBoxScreenPosition();
+            renderOsdDrawingDraft();
+            setTimeout(() => {
+                if (inspectorState.justAppliedRegionId === newRegion.id) {
+                    inspectorState.justAppliedRegionId = null;
+                    renderOsdDrawingDraft();
+                }
+            }, 2000);
         }
 
         // Cập nhật trạng thái nút và card trong sidebar
@@ -1751,17 +1876,20 @@
             });
         }
 
-        const state = ProjectStore.getState();
-        const layer = state.layers.find(l => l.id === layerId);
-        const layerName = layer ? layer.sourceId : layerId;
         if (DOM.inspectorStatusText) {
-            DOM.inspectorStatusText.innerHTML = `✅ Applied sharpest slice from <b>${layerName}</b> to this region!`;
+            DOM.inspectorStatusText.innerHTML = `
+                <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 6px; padding: 8px 12px; margin-top: 6px; color: #a7f3d0; font-size: 12px; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-circle-check" style="color: #34d399; font-size: 14px;"></i>
+                    <span>Đã gán lát cắt nét từ <b>${layerName}</b> cho vùng này!</span>
+                </div>
+            `;
         }
 
         renderFocusRegionsList();
         updateOsdFocusOverlays();
         CanvasEngine.requestRender();
         setStatus('ready', `Đã gán ảnh nét [${layerName}] cho vùng [${Math.round(newRegion.boundingRect[0])}, ${Math.round(newRegion.boundingRect[1])}]`);
+        showToast(`Đã gán lát cắt [${layerName}] thành công!`, 'success');
     }
 
     function updateOsdFocusOverlays() {
@@ -2301,6 +2429,25 @@
     function setStatus(type, text) {
         DOM.globalStatusBadge.className = `status-badge ${type}`;
         DOM.statusBadgeText.textContent = text;
+    }
+
+    function showToast(text, type = 'success') {
+        let toast = document.getElementById('omnistitchToast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'omnistitchToast';
+            toast.className = 'omnistitch-toast';
+            document.body.appendChild(toast);
+        }
+        const icon = (type === 'success') 
+            ? '<i class="fa-solid fa-circle-check"></i>' 
+            : (type === 'error' ? '<i class="fa-solid fa-circle-xmark"></i>' : '<i class="fa-solid fa-circle-info"></i>');
+        toast.innerHTML = `${icon} <span>${text}</span>`;
+        toast.className = `omnistitch-toast is-visible ${type}`;
+        clearTimeout(toast._timeout);
+        toast._timeout = setTimeout(() => {
+            toast.classList.remove('is-visible');
+        }, 2800);
     }
 
     // ==========================================

@@ -332,6 +332,11 @@ const ProjectStore = (function () {
                 existing.selectedLayerId = targetLayerId;
                 existing.featherWorldPx = Number(targetFeather) || 8;
                 existing.featherPx = existing.featherWorldPx;
+                existing.geometryRevision = this.state.geometryRevision || 1;
+                if (regionConfig && regionConfig.imageDataUrl) {
+                    existing.imageDataUrl = regionConfig.imageDataUrl;
+                    existing._cachedImg = null;
+                }
                 existing.updatedAt = new Date().toISOString();
                 tx.commit('Cập nhật ảnh nét cho vùng');
                 this.notify('focusRegions');
@@ -351,7 +356,8 @@ const ProjectStore = (function () {
                 featherPx: Number(targetFeather) || 8,
                 order: this.state.focusRegions.length,
                 locked: false,
-                geometryRevision: 1,
+                geometryRevision: this.state.geometryRevision || 1,
+                imageDataUrl: regionConfig.imageDataUrl || null,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             };
