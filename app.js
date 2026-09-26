@@ -84,6 +84,8 @@
         cfgMotionModel: document.getElementById('cfgMotionModel'),
         cfgBackgroundMode: document.getElementById('cfgBackgroundMode'),
         cfgAutoCrop: document.getElementById('cfgAutoCrop'),
+        cfgGaussianSmoothing: document.getElementById('cfgGaussianSmoothing'),
+        cfgEnhanceClarity: document.getElementById('cfgEnhanceClarity'),
         cfgExportFormat: document.getElementById('cfgExportFormat'),
 
         // Progress Panel
@@ -119,6 +121,10 @@
         btnOsdFit: document.getElementById('btnOsdFit'),
         btnOsdOneToOne: document.getElementById('btnOsdOneToOne'),
         btnOsdReset: document.getElementById('btnOsdReset'),
+        btnToggleGaussian: document.getElementById('btnToggleGaussian'),
+        lblGaussian: document.getElementById('lblGaussian'),
+        btnToggleClarify: document.getElementById('btnToggleClarify'),
+        lblClarify: document.getElementById('lblClarify'),
         osdZoomIndicator: document.getElementById('osdZoomIndicator'),
         osdDrawingCanvas: document.getElementById('osdDrawingCanvas'),
 
@@ -2142,6 +2148,8 @@
             motionModel: DOM.cfgMotionModel.value,
             backgroundMode: DOM.cfgBackgroundMode.value,
             autoCrop: DOM.cfgAutoCrop.checked,
+            gaussianSmoothing: DOM.cfgGaussianSmoothing ? DOM.cfgGaussianSmoothing.checked : true,
+            enhanceClarity: DOM.cfgEnhanceClarity ? DOM.cfgEnhanceClarity.checked : false,
             exportFormat: DOM.cfgExportFormat.value || null,
             project: state
         };
@@ -3000,6 +3008,53 @@
             uiState.osdViewer.viewport.setRotation(0);
             uiState.osdViewer.viewport.goHome();
         });
+
+        // Gaussian flat-field smoothing & cellular clarity toggles
+        function updateGaussianUiState(enabled) {
+            if (DOM.cfgGaussianSmoothing) DOM.cfgGaussianSmoothing.checked = enabled;
+            if (DOM.btnToggleGaussian) {
+                DOM.btnToggleGaussian.classList.toggle('active', enabled);
+                if (DOM.lblGaussian) DOM.lblGaussian.textContent = `Gaussian: ${enabled ? 'ON' : 'OFF'}`;
+            }
+        }
+
+        function updateClarifyUiState(enabled) {
+            if (DOM.cfgEnhanceClarity) DOM.cfgEnhanceClarity.checked = enabled;
+            if (DOM.btnToggleClarify) {
+                DOM.btnToggleClarify.classList.toggle('active', enabled);
+                if (DOM.lblClarify) DOM.lblClarify.textContent = `Rõ nét: ${enabled ? 'ON' : 'OFF'}`;
+            }
+            const osdContainer = document.getElementById('openseadragonViewer');
+            if (osdContainer) {
+                osdContainer.classList.toggle('osd-clarity-enhanced', enabled);
+            }
+        }
+
+        if (DOM.btnToggleGaussian) {
+            DOM.btnToggleGaussian.addEventListener('click', () => {
+                const nextVal = !(DOM.cfgGaussianSmoothing ? DOM.cfgGaussianSmoothing.checked : true);
+                updateGaussianUiState(nextVal);
+                setStatus('ready', `Đã ${nextVal ? 'bật' : 'tắt'} cân bằng trường sáng Gaussian.`);
+            });
+        }
+        if (DOM.cfgGaussianSmoothing) {
+            DOM.cfgGaussianSmoothing.addEventListener('change', (e) => {
+                updateGaussianUiState(e.target.checked);
+            });
+        }
+
+        if (DOM.btnToggleClarify) {
+            DOM.btnToggleClarify.addEventListener('click', () => {
+                const nextVal = !(DOM.cfgEnhanceClarity ? DOM.cfgEnhanceClarity.checked : false);
+                updateClarifyUiState(nextVal);
+                setStatus('ready', `Đã ${nextVal ? 'bật' : 'tắt'} tăng độ rõ nét vi thể tế bào.`);
+            });
+        }
+        if (DOM.cfgEnhanceClarity) {
+            DOM.cfgEnhanceClarity.addEventListener('change', (e) => {
+                updateClarifyUiState(e.target.checked);
+            });
+        }
 
         // Lắng nghe thay đổi store
         ProjectStore.subscribe((state, changeType) => {

@@ -118,7 +118,9 @@ def background_stitching_worker(image_paths, options):
             export_format=options.get("exportFormat", None),
             custom_output_name=options.get("customOutputName", None),
             progress_callback=update_stitching_progress,
-            project_layers=options.get("project_layers")
+            project_layers=options.get("project_layers"),
+            enable_gaussian_smoothing=options.get("gaussianSmoothing", True),
+            enhance_clarity=options.get("enhanceClarity", False)
         )
         with stitching_task_lock:
             stitching_task["result"] = result

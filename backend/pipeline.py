@@ -12,7 +12,7 @@ from backend.io_utils import read_image, save_tiff
 from backend.feature_engine import FeatureEngine
 from backend.matcher import FeatureMatcher
 from backend.global_stitching import GlobalStitcher
-from backend.blending import FastStreamingBlender
+from backend.blending import FastStreamingBlender, equalize_tile_illumination
 from backend.postprocessing import find_largest_inscribed_rectangle
 from backend.wsi_exporter import export_wsi_multiformat
 
@@ -50,7 +50,9 @@ def run_wsi_stitching_pipeline(
     export_format=None,
     custom_output_name=None,
     progress_callback=None,
-    project_layers=None
+    project_layers=None,
+    enable_gaussian_smoothing=True,
+    enhance_clarity=False
 ):
     """
     Automated gigapixel mosaic stitching pipeline:
@@ -95,6 +97,11 @@ def run_wsi_stitching_pipeline(
         source_images[i] = read_image(path)
         images[i] = source_images[i][:, :, :3] if source_images[i].ndim == 3 and source_images[i].shape[2] == 4 else source_images[i]
         report(5 + int(20 * (i + 1) / n_images), f"Loaded tile {i+1}/{n_images}: {os.path.basename(path)}")
+
+    # Đồng bộ màu sắc và chuẩn hóa ánh sáng nền kính hiển vi giữa các ô ảnh
+    report(24, "Normalizing microscopy flat-field illumination & color balance...")
+    source_images = equalize_tile_illumination(source_images, enable_gaussian_smoothing=enable_gaussian_smoothing)
+    images = {i: (img[:, :, :3] if img.ndim == 3 and img.shape[2] == 4 else img) for i, img in source_images.items()}
 
     # Kiểm tra xem có thể tái sử dụng tọa độ layers đã căn chỉnh chuẩn từ Studio không
     has_valid_project = False
@@ -224,7 +231,7 @@ def run_wsi_stitching_pipeline(
 
     # 5. Tích lũy và hòa trộn Voronoi Adaptive Seam Blending
     report(75, f"Initializing Gigapixel Canvas ({canvas_w}x{canvas_h} px)...")
-    blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode, focus_stacking=True)
+    blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode, focus_stacking=True, enhance_clarity=enhance_clarity)
 
     for i, img in source_images.items():
         H = adjusted_transforms[i]

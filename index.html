@@ -268,6 +268,20 @@
                                 <span>Auto-crop inscribed bounding box</span>
                             </label>
                         </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label" title="Khử hiện tượng tối góc vi kính (vignetting/flat-field) bằng bộ lọc Gaussian 2D với mặt nạ loại trừ mô">
+                                <input type="checkbox" id="cfgGaussianSmoothing" checked>
+                                <span>Gaussian Flat-Field Correction (Khử lệch sáng & viền mép)</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label" title="Làm nổi rõ viền nhân tế bào và cấu trúc vi thể">
+                                <input type="checkbox" id="cfgEnhanceClarity">
+                                <span>Enhance Cellular Clarity (Làm rõ nét vi thể tế bào)</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
@@ -328,6 +342,8 @@
                         <button class="btn-sm" id="btnOsdFit" title="Fit entire slide">Fit</button>
                         <button class="btn-sm" id="btnOsdOneToOne" title="One pixel per screen pixel">1:1</button>
                         <button class="btn-sm" id="btnOsdReset" title="Reset default view">Reset</button>
+                        <button class="btn-sm active" id="btnToggleGaussian" title="Bật/Tắt cân bằng trường sáng Gaussian"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="lblGaussian">Gaussian: ON</span></button>
+                        <button class="btn-sm" id="btnToggleClarify" title="Bật/Tắt làm rõ nét vi thể tế bào (Cellular Clarity)"><i class="fa-solid fa-bolt"></i> <span id="lblClarify">Rõ nét: OFF</span></button>
                         <span class="zoom-indicator" id="osdZoomIndicator">--</span>
                     </div>
 
