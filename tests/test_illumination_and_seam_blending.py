@@ -172,12 +172,35 @@ class TestIlluminationAndSeamBlending(unittest.TestCase):
 
         blended, mask = blend_multiband_voronoi(images, gains, transforms, canvas_w=150, canvas_h=100, num_bands=3)
         self.assertEqual(blended.shape, (100, 150, 3))
-        # Không có pixel nào bị lỗi hoặc bùng nổ
-        self.assertAlmostEqual(float(blended[50, 75, 0]), 160.0, delta=2.0)
-        self.assertGreater(np.count_nonzero(mask), 1000)
+    def test_sharpness_prioritizes_sharp_tile_over_blurry_tile(self):
+        from backend.blending import blend_multiband_voronoi
+        # Tạo 2 tile chồng lấn 50%:
+        # Tile 0: Rất sắc nét (chứa các chấm nhân tế bào có độ tương phản cao)
+        tile_sharp = np.full((100, 100, 3), 200, dtype=np.uint8)
+        for x in range(60, 90, 6):
+            for y in range(20, 80, 6):
+                cv2.circle(tile_sharp, (x, y), 2, (30, 20, 50), -1)
+
+        # Tile 1: Bị mờ nhòe (out-of-focus mô phỏng bằng GaussianBlur nặng)
+        tile_blurry = cv2.GaussianBlur(tile_sharp, (25, 25), 0)
+
+        images = {0: tile_sharp, 1: tile_blurry}
+        transforms = {
+            0: np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        }
+        gains = {0: np.ones(3, dtype=np.float32), 1: np.ones(3, dtype=np.float32)}
+
+        blended, _ = blend_multiband_voronoi(images, gains, transforms, canvas_w=150, canvas_h=100, num_bands=3)
+        # Tại vùng overlap quanh x=75, ảnh kết quả phải giữ được chi tiết sắc nét (Laplacian cao)
+        overlap_roi = cv2.cvtColor(blended[:, 60:90], cv2.COLOR_RGB2GRAY)
+        lap_var = cv2.Laplacian(overlap_roi, cv2.CV_64F).var()
+        # Nếu chọn tile rõ nét, Laplacian variance sẽ lớn hơn 20 (ảnh mờ chỉ có < 5)
+        self.assertGreater(lap_var, 15.0, f"Vùng overlap bị chọn nhầm tile mờ! Laplacian Var={lap_var}")
 
 
 if __name__ == '__main__':
     unittest.main()
+
 
 

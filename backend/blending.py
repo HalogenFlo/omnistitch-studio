@@ -7,16 +7,17 @@ import numpy as np
 
 def compute_local_sharpness_map(img_rgb, kernel_size=15):
     """
-    Calculates localized microscopic sharpness/focus map
-    Kết hợp 3 tiêu chí:
+    Calculates localized absolute microscopic sharpness/focus map
+    Đo đạc năng lượng độ nét vi thể tuyệt đối:
     1. Tenengrad Gradient (Độ tương phản biên vi thể)
     2. Modified Laplacian (Độ sắc nét nhân tế bào)
-    3. Local Variance (Năng lượng kết cấu mô học - vùng rõ nét có variance cao vượt trội so với vùng out-focus mờ)
+    Giữ nguyên thang đo năng lượng thực tế (không chuẩn hóa co cụm cục bộ từng ảnh) để so sánh trực tiếp giữa các tile:
+    Tile rõ nét (in-focus) sẽ có năng lượng cao vượt trội so với tile bị trôi nét/mờ (out-of-focus).
     """
-    if len(img_rgb.shape) == 3:
-        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    if img_rgb.ndim == 3:
+        gray = cv2.cvtColor(img_rgb[:, :, :3].astype(np.uint8), cv2.COLOR_RGB2GRAY)
     else:
-        gray = img_rgb.copy()
+        gray = img_rgb.astype(np.uint8)
 
     gray_f = gray.astype(np.float32)
 
@@ -28,27 +29,14 @@ def compute_local_sharpness_map(img_rgb, kernel_size=15):
     # 2. Gradient bậc 2 (Laplacian vi phân tế bào)
     lap_mag = np.abs(cv2.Laplacian(gray_f, cv2.CV_32F, ksize=3))
 
-    # 3. Local Standard Deviation / Texture Energy
-    k = kernel_size if kernel_size % 2 != 0 else kernel_size + 1
-    mean = cv2.blur(gray_f, (k, k))
-    sq_mean = cv2.blur(gray_f * gray_f, (k, k))
-    variance = np.maximum(0.0, sq_mean - mean * mean)
-    local_std = np.sqrt(variance)
-
-    # Tổng hợp năng lượng độ nét
-    sharpness_raw = grad_mag + 0.8 * lap_mag + 0.6 * local_std
+    # Tổng hợp năng lượng độ nét vi thể thực tế
+    sharpness_raw = grad_mag + 0.8 * lap_mag
 
     # Làm mượt nhẹ để tạo trường năng lượng liên tục không bị nhiễu hạt
+    k = kernel_size if kernel_size % 2 != 0 else kernel_size + 1
     sharpness_smooth = cv2.GaussianBlur(sharpness_raw, (k, k), 0)
 
-    # Chuẩn hóa cục bộ về dải [0, 10] để lũy thừa cạnh tranh ổn định
-    max_v = np.max(sharpness_smooth)
-    if max_v > 1e-5:
-        sharpness_norm = (sharpness_smooth / max_v) * 10.0
-    else:
-        sharpness_norm = np.zeros_like(sharpness_smooth)
-
-    return sharpness_norm
+    return sharpness_smooth
 
 
 def enhance_cellular_clarity(image, strength=0.35):
@@ -600,8 +588,9 @@ class FastStreamingBlender:
         # Kết hợp điều biến độ nét cục bộ nếu bật focus stacking
         if self.focus_stacking:
             sharpness_map = compute_local_sharpness_map(warped_straight, kernel_size=15)
-            sharp_factor = 1.0 + 0.05 * np.nan_to_num(np.clip(sharpness_map, 0.0, 10.0), nan=0.0)
-            quality_metric = (dist_map * sharp_factor.astype(np.float32)).astype(np.float32)
+            # Hệ số sắc nét vi thể: ảnh mờ (sharpness < 15) bị phạt nặng, ảnh rõ (sharpness > 40) được tăng vọt
+            sharp_factor = np.clip(sharpness_map / 25.0, 0.25, 4.0)
+            quality_metric = (dist_map * (sharp_factor ** 2)).astype(np.float32)
         else:
             quality_metric = dist_map
 
@@ -820,11 +809,18 @@ def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, c
         warped_dist = cv2.warpAffine(dist_map, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderValue=0.0)
         warped_mask = cv2.warpAffine(np.ones((h, w), dtype=np.uint8), H_roi, (rw, rh), flags=cv2.INTER_NEAREST, borderValue=0)
 
+        # Tính độ sắc nét vi thể thực tế của tile i (Ưu tiên tuyệt đối tile rõ nét, loại bỏ tile mờ)
+        sharpness_map = compute_local_sharpness_map(compensated_images[i], kernel_size=15)
+        warped_sharpness = cv2.warpAffine(sharpness_map, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderValue=0.0)
+
+        sharp_factor = np.clip(warped_sharpness / 25.0, 0.25, 4.0)
+        tile_quality = (warped_dist * (sharp_factor ** 2)).astype(np.float32)
+
         canvas_d_sub = max_dist[y0:y1, x0:x1]
         canvas_idx_sub = best_tile_idx[y0:y1, x0:x1]
 
-        better = (warped_dist > canvas_d_sub) & (warped_mask > 0)
-        canvas_d_sub[better] = warped_dist[better]
+        better = (tile_quality > canvas_d_sub) & (warped_mask > 0)
+        canvas_d_sub[better] = tile_quality[better]
         canvas_idx_sub[better] = i
 
         tile_rois[i] = (x0, y0, x1, y1, H_roi)
