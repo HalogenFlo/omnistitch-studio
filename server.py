@@ -121,7 +121,8 @@ def background_stitching_worker(image_paths, options):
             project_layers=options.get("project_layers"),
             enable_gaussian_smoothing=options.get("gaussianSmoothing", True),
             enhance_clarity=options.get("enhanceClarity", False),
-            compensate_exposure=options.get("compensateExposure", True)
+            compensate_exposure=options.get("compensateExposure", True),
+            blending_mode=options.get("blendingMode", "multiband")
         )
         with stitching_task_lock:
             stitching_task["result"] = result
