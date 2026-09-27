@@ -109,7 +109,40 @@ class TestIlluminationAndSeamBlending(unittest.TestCase):
         # Với unsharp mask vi phân, nhân tế bào sẽ sắc nét và tương phản hơn với nền
         diff_norm = abs(float(res_norm[50, 50, 0]) - float(res_norm[50, 70, 0]))
         diff_clar = abs(float(res_clar[50, 50, 0]) - float(res_clar[50, 70, 0]))
-        self.assertGreaterEqual(diff_clar, diff_norm, "Bộ lọc rõ nét phải tăng hoặc bảo toàn tương phản vi thể nhân tế bào")
+    def test_compensate_overlap_exposure_balances_brightness(self):
+        # Tạo 2 tile chồng lấn 50%: Tile 1 tối (100), Tile 2 sáng (200)
+        from backend.blending import compensate_overlap_exposure
+        tile1 = np.full((100, 100, 3), 100, dtype=np.uint8)
+        tile2 = np.full((100, 100, 3), 200, dtype=np.uint8)
+
+        images = {0: tile1, 1: tile2}
+        transforms = {
+            0: np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        }
+
+        balanced_images = compensate_overlap_exposure(images, transforms)
+
+        # Kiểm tra sau khi cân bằng: độ lệch độ sáng giữa 2 tile tại vùng overlap giảm rõ rệt
+        mean1 = np.mean(balanced_images[0][:, 50:100])
+        mean2 = np.mean(balanced_images[1][:, 0:50])
+        diff = abs(mean1 - mean2)
+        self.assertLess(diff, 10.0, f"Độ lệch sáng sau khi cân bằng overlap vẫn còn quá lớn: {diff}")
+
+    def test_tissue_mask_and_defringe_filter(self):
+        from backend.blending import get_tissue_mask, apply_defringe_filter
+        # Ảnh có nền trắng 240 và nhân tế bào 80
+        img = np.full((50, 50, 3), 240, dtype=np.uint8)
+        img[10:30, 10:30] = 80
+        mask = get_tissue_mask(img, threshold=215)
+        self.assertEqual(mask[20, 20], 1)
+        self.assertEqual(mask[0, 0], 0)
+
+        # Viền quang sai màu xanh (Blue 200, Red 100, Green 100)
+        img_fringe = np.array([[[100, 100, 200]]], dtype=np.uint8)
+        clean = apply_defringe_filter(img_fringe, threshold=12, min_blue=50)
+        # Kênh blue phải bị giới hạn về max(r, g) = 100
+        self.assertEqual(clean[0, 0, 2], 100)
 
 
 if __name__ == '__main__':

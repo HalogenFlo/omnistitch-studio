@@ -85,6 +85,7 @@
         cfgBackgroundMode: document.getElementById('cfgBackgroundMode'),
         cfgAutoCrop: document.getElementById('cfgAutoCrop'),
         cfgGaussianSmoothing: document.getElementById('cfgGaussianSmoothing'),
+        cfgCompensateExposure: document.getElementById('cfgCompensateExposure'),
         cfgEnhanceClarity: document.getElementById('cfgEnhanceClarity'),
         cfgExportFormat: document.getElementById('cfgExportFormat'),
 
@@ -123,6 +124,8 @@
         btnOsdReset: document.getElementById('btnOsdReset'),
         btnToggleGaussian: document.getElementById('btnToggleGaussian'),
         lblGaussian: document.getElementById('lblGaussian'),
+        btnToggleExposure: document.getElementById('btnToggleExposure'),
+        lblExposure: document.getElementById('lblExposure'),
         btnToggleClarify: document.getElementById('btnToggleClarify'),
         lblClarify: document.getElementById('lblClarify'),
         osdZoomIndicator: document.getElementById('osdZoomIndicator'),
@@ -2149,6 +2152,7 @@
             backgroundMode: DOM.cfgBackgroundMode.value,
             autoCrop: DOM.cfgAutoCrop.checked,
             gaussianSmoothing: DOM.cfgGaussianSmoothing ? DOM.cfgGaussianSmoothing.checked : true,
+            compensateExposure: DOM.cfgCompensateExposure ? DOM.cfgCompensateExposure.checked : true,
             enhanceClarity: DOM.cfgEnhanceClarity ? DOM.cfgEnhanceClarity.checked : false,
             exportFormat: DOM.cfgExportFormat.value || null,
             project: state
@@ -3018,6 +3022,14 @@
             }
         }
 
+        function updateExposureUiState(enabled) {
+            if (DOM.cfgCompensateExposure) DOM.cfgCompensateExposure.checked = enabled;
+            if (DOM.btnToggleExposure) {
+                DOM.btnToggleExposure.classList.toggle('active', enabled);
+                if (DOM.lblExposure) DOM.lblExposure.textContent = `Cân bằng sáng: ${enabled ? 'ON' : 'OFF'}`;
+            }
+        }
+
         function updateClarifyUiState(enabled) {
             if (DOM.cfgEnhanceClarity) DOM.cfgEnhanceClarity.checked = enabled;
             if (DOM.btnToggleClarify) {
@@ -3040,6 +3052,19 @@
         if (DOM.cfgGaussianSmoothing) {
             DOM.cfgGaussianSmoothing.addEventListener('change', (e) => {
                 updateGaussianUiState(e.target.checked);
+            });
+        }
+
+        if (DOM.btnToggleExposure) {
+            DOM.btnToggleExposure.addEventListener('click', () => {
+                const nextVal = !(DOM.cfgCompensateExposure ? DOM.cfgCompensateExposure.checked : true);
+                updateExposureUiState(nextVal);
+                setStatus('ready', `Đã ${nextVal ? 'bật' : 'tắt'} cân bằng sáng các hình.`);
+            });
+        }
+        if (DOM.cfgCompensateExposure) {
+            DOM.cfgCompensateExposure.addEventListener('change', (e) => {
+                updateExposureUiState(e.target.checked);
             });
         }
 

@@ -120,7 +120,8 @@ def background_stitching_worker(image_paths, options):
             progress_callback=update_stitching_progress,
             project_layers=options.get("project_layers"),
             enable_gaussian_smoothing=options.get("gaussianSmoothing", True),
-            enhance_clarity=options.get("enhanceClarity", False)
+            enhance_clarity=options.get("enhanceClarity", False),
+            compensate_exposure=options.get("compensateExposure", True)
         )
         with stitching_task_lock:
             stitching_task["result"] = result
@@ -512,7 +513,10 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             "autoCrop": data.get("autoCrop", False),
             "exportFormat": data.get("exportFormat", None),
             "customOutputName": folder_name,
-            "project_layers": project_layers if data.get("useCanvasLayout") else None
+            "project_layers": project_layers if data.get("useCanvasLayout") else None,
+            "gaussianSmoothing": data.get("gaussianSmoothing", True),
+            "enhanceClarity": data.get("enhanceClarity", False),
+            "compensateExposure": data.get("compensateExposure", True)
         }
 
         # Khởi chạy trong Background Thread

@@ -12,7 +12,7 @@ from backend.io_utils import read_image, save_tiff
 from backend.feature_engine import FeatureEngine
 from backend.matcher import FeatureMatcher
 from backend.global_stitching import GlobalStitcher
-from backend.blending import FastStreamingBlender, equalize_tile_illumination
+from backend.blending import FastStreamingBlender, equalize_tile_illumination, compensate_overlap_exposure
 from backend.postprocessing import find_largest_inscribed_rectangle
 from backend.wsi_exporter import export_wsi_multiformat
 
@@ -52,7 +52,8 @@ def run_wsi_stitching_pipeline(
     progress_callback=None,
     project_layers=None,
     enable_gaussian_smoothing=True,
-    enhance_clarity=False
+    enhance_clarity=False,
+    compensate_exposure=True
 ):
     """
     Automated gigapixel mosaic stitching pipeline:
@@ -230,6 +231,10 @@ def run_wsi_stitching_pipeline(
         )
 
     # 5. Tích lũy và hòa trộn Voronoi Adaptive Seam Blending
+    if compensate_exposure and len(source_images) > 1:
+        report(72, "Balancing exposure & brightness across overlapping tiles...")
+        source_images = compensate_overlap_exposure(source_images, adjusted_transforms, motion_model=motion_model)
+
     report(75, f"Initializing Gigapixel Canvas ({canvas_w}x{canvas_h} px)...")
     blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode, focus_stacking=True, enhance_clarity=enhance_clarity)
 

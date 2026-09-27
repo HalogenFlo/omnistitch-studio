@@ -277,6 +277,13 @@
                         </div>
 
                         <div class="form-group">
+                            <label class="checkbox-label" title="Cân bằng phơi sáng tối ưu giữa các ô ảnh dựa trên vùng chồng lấn (Khử triệt để hình sáng hình tối / ô cờ)">
+                                <input type="checkbox" id="cfgCompensateExposure" checked>
+                                <span>Overlap Exposure Balancing (Cân bằng sáng các hình)</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group">
                             <label class="checkbox-label" title="Làm nổi rõ viền nhân tế bào và cấu trúc vi thể">
                                 <input type="checkbox" id="cfgEnhanceClarity">
                                 <span>Enhance Cellular Clarity (Làm rõ nét vi thể tế bào)</span>
@@ -343,6 +350,7 @@
                         <button class="btn-sm" id="btnOsdOneToOne" title="One pixel per screen pixel">1:1</button>
                         <button class="btn-sm" id="btnOsdReset" title="Reset default view">Reset</button>
                         <button class="btn-sm active" id="btnToggleGaussian" title="Bật/Tắt cân bằng trường sáng Gaussian"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="lblGaussian">Gaussian: ON</span></button>
+                        <button class="btn-sm active" id="btnToggleExposure" title="Bật/Tắt cân bằng sáng các hình (Exposure Balance)"><i class="fa-solid fa-sun"></i> <span id="lblExposure">Cân bằng sáng: ON</span></button>
                         <button class="btn-sm" id="btnToggleClarify" title="Bật/Tắt làm rõ nét vi thể tế bào (Cellular Clarity)"><i class="fa-solid fa-bolt"></i> <span id="lblClarify">Rõ nét: OFF</span></button>
                         <span class="zoom-indicator" id="osdZoomIndicator">--</span>
                     </div>
