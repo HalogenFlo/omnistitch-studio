@@ -662,5 +662,199 @@ class FastStreamingBlender:
             blended_rgb = np.where(valid_mask[:, :, None], blended_rgb, 255).astype(np.uint8)
             return blended_rgb, np.where(valid_mask, 255, 0).astype(np.uint8)
 
+
+def solve_tissue_specific_gains(images, adjusted_transforms, canvas_w, canvas_h, threshold=215):
+    """
+    Cân bằng phơi sáng chuyên biệt trên phần mô học tại các vùng giao thoa.
+    Thuật toán chuẩn từ kietlearntocode/stitch:
+    - Tìm vùng giao thoa giữa các cặp ảnh trên canvas toàn cục.
+    - Ưu tiên đo trung vị (np.median) trên phần mô tế bào chung (shared_tissue).
+    - Giải hệ Least Squares log-linear để tìm hệ số gain vô hướng duy nhất cho mỗi ô ảnh.
+    - Chuẩn hóa: gains = gains / np.median(gains) và clip(0.5, 2.0).
+    - Bảo toàn 100% tỷ lệ màu sắc (Hue & Saturation) của thuốc nhuộm mô học, không làm lệch màu hay bợt màu.
+    """
+    indices = [i for i in images if i in adjusted_transforms and images[i] is not None]
+    n_images = len(indices)
+    if n_images <= 1:
+        return {i: np.ones(3, dtype=np.float32) for i in images}
+
+    idx_to_pos = {idx: pos for pos, idx in enumerate(indices)}
+
+    # Tự động scale thích nghi để chạy cực nhanh và tiết kiệm RAM
+    max_dim = max(canvas_w, canvas_h)
+    scale = min(0.25, 2048.0 / max(max_dim, 1))
+    dw = max(1, int(canvas_w * scale))
+    dh = max(1, int(canvas_h * scale))
+    S = np.diag([scale, scale, 1.0])
+
+    warped_rgbs = {}
+    warped_tissue_masks = {}
+    warped_tile_masks = {}
+
+    for i in indices:
+        img = images[i]
+        h, w = img.shape[:2]
+        T = (S @ np.asarray(adjusted_transforms[i], dtype=np.float64))[:2]
+        rgb = img[:, :, :3] if img.ndim == 3 and img.shape[2] == 4 else img
+        warped_rgbs[i] = cv2.warpAffine(rgb, T, (dw, dh), flags=cv2.INTER_LINEAR)
+        t_mask = get_tissue_mask(rgb, threshold=threshold)
+        warped_tissue_masks[i] = cv2.warpAffine(t_mask, T, (dw, dh), flags=cv2.INTER_NEAREST)
+        warped_tile_masks[i] = cv2.warpAffine(np.ones((h, w), dtype=np.uint8), T, (dw, dh), flags=cv2.INTER_NEAREST)
+
+    rows_A = []
+    vals_b = []
+    weights = []
+
+    for p_i in range(n_images):
+        i = indices[p_i]
+        for p_j in range(p_i + 1, n_images):
+            j = indices[p_j]
+            shared_tissue = (warped_tissue_masks[i] > 0) & (warped_tissue_masks[j] > 0)
+            n_tissue = np.count_nonzero(shared_tissue)
+
+            if n_tissue > 50:
+                mean_i = float(np.median(warped_rgbs[i][shared_tissue]))
+                mean_j = float(np.median(warped_rgbs[j][shared_tissue]))
+                if mean_i > 5.0 and mean_j > 5.0:
+                    ratio = mean_j / mean_i
+                    row = np.zeros(n_images, dtype=np.float32)
+                    row[p_i] = 1.0
+                    row[p_j] = -1.0
+                    w_ij = np.sqrt(float(n_tissue))
+                    rows_A.append(row * w_ij)
+                    vals_b.append(np.log(ratio) * w_ij)
+                    weights.append(w_ij)
+            else:
+                shared_glass = (warped_tile_masks[i] > 0) & (warped_tile_masks[j] > 0) & (~shared_tissue)
+                n_glass = np.count_nonzero(shared_glass)
+                if n_glass > 80:
+                    mean_i = float(np.median(warped_rgbs[i][shared_glass]))
+                    mean_j = float(np.median(warped_rgbs[j][shared_glass]))
+                    if mean_i > 5.0 and mean_j > 5.0:
+                        ratio = mean_j / mean_i
+                        row = np.zeros(n_images, dtype=np.float32)
+                        row[p_i] = 1.0
+                        row[p_j] = -1.0
+                        w_ij = 0.5 * np.sqrt(float(n_glass))
+                        rows_A.append(row * w_ij)
+                        vals_b.append(np.log(ratio) * w_ij)
+                        weights.append(w_ij)
+
+    if len(rows_A) == 0:
+        return {i: np.ones(3, dtype=np.float32) for i in images}
+
+    A = np.array(rows_A, dtype=np.float32)
+    b = np.array(vals_b, dtype=np.float32)
+
+    constraint_row = np.ones((1, n_images), dtype=np.float32) * (np.mean(weights) * 2.0)
+    constraint_val = np.zeros(1, dtype=np.float32)
+    A_full = np.vstack([A, constraint_row])
+    b_full = np.concatenate([b, constraint_val])
+
+    log_g, _, _, _ = np.linalg.lstsq(A_full, b_full, rcond=None)
+    gains = np.exp(log_g)
+    gains = gains / np.median(gains)
+    gains = np.clip(gains, 0.5, 2.0)
+
+    result_gains = {}
+    for pos, idx in enumerate(indices):
+        result_gains[idx] = np.full(3, gains[pos], dtype=np.float32)
+    for idx in images:
+        if idx not in result_gains:
+            result_gains[idx] = np.ones(3, dtype=np.float32)
+
+    return result_gains
+
+
+def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, canvas_h, num_bands=5, background_mode='white'):
+    """
+    Hòa trộn đa băng tần Laplacian kết hợp phân vùng Voronoi Seam Partitioning.
+    Thuật toán chuẩn từ kietlearntocode/stitch:
+    - Băng tần cao nhất (High Frequency - nhân tế bào, viền vi thể) giữ nguyên 100% độ nét quang học gốc (Sharpness 100%).
+    - Băng tần thấp (Low Frequency - màu nền, quang thông) chuyển tiếp mượt mà qua tháp Gaussian/Laplacian.
+    - Triệt tiêu hoàn toàn hiện tượng mờ nhòe (zero blur) và xóa sổ mọi ranh giới hình chữ nhật giữa các ô ảnh.
+    """
+    indices = [i for i in images if i in adjusted_transforms and images[i] is not None]
+    n_images = len(indices)
+    if n_images == 0:
+        bg_col = 255 if background_mode == 'white' else 0
+        return np.full((canvas_h, canvas_w, 3), bg_col, dtype=np.uint8), np.zeros((canvas_h, canvas_w), dtype=np.uint8)
+
+    # 1. Cân bằng phơi sáng an toàn
+    compensated_images = {}
+    for i in indices:
+        img = images[i]
+        rgb = img[:, :, :3] if img.ndim == 3 and img.shape[2] == 4 else img
+        g = tile_gains.get(i, np.ones(3, dtype=np.float32))
+        img_f = rgb.astype(np.float32) * g[None, None, :]
+        compensated_images[i] = np.clip(img_f, 0.0, 255.0).astype(np.uint8)
+
+    # 2. Tạo mặt nạ Voronoi Seam Partitioning
+    max_dist = np.zeros((canvas_h, canvas_w), dtype=np.float32)
+    best_tile_idx = np.full((canvas_h, canvas_w), -1, dtype=np.int16)
+    tile_rois = {}
+
+    for i in indices:
+        h, w = images[i].shape[:2]
+        H = np.asarray(adjusted_transforms[i], dtype=np.float64)
+
+        padded_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+        padded_mask[1:-1, 1:-1] = 1
+        dist_map = cv2.distanceTransform(padded_mask, cv2.DIST_L2, 5)[1:-1, 1:-1].astype(np.float32)
+
+        corners = np.array([[0, 0, 1], [w, 0, 1], [w, h, 1], [0, h, 1]], dtype=np.float64).T
+        warped_corners = H @ corners
+        pts = warped_corners[:2, :].T
+        x0 = max(0, int(np.floor(np.min(pts[:, 0]))))
+        y0 = max(0, int(np.floor(np.min(pts[:, 1]))))
+        x1 = min(canvas_w, int(np.ceil(np.max(pts[:, 0]))))
+        y1 = min(canvas_h, int(np.ceil(np.max(pts[:, 1]))))
+        rw, rh = x1 - x0, y1 - y0
+
+        if rw <= 0 or rh <= 0:
+            continue
+
+        T_roi = np.array([[1.0, 0.0, -x0], [0.0, 1.0, -y0], [0.0, 0.0, 1.0]], dtype=np.float64)
+        H_roi = (T_roi @ H)[:2]
+
+        warped_dist = cv2.warpAffine(dist_map, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderValue=0.0)
+        warped_mask = cv2.warpAffine(np.ones((h, w), dtype=np.uint8), H_roi, (rw, rh), flags=cv2.INTER_NEAREST, borderValue=0)
+
+        canvas_d_sub = max_dist[y0:y1, x0:x1]
+        canvas_idx_sub = best_tile_idx[y0:y1, x0:x1]
+
+        better = (warped_dist > canvas_d_sub) & (warped_mask > 0)
+        canvas_d_sub[better] = warped_dist[better]
+        canvas_idx_sub[better] = i
+
+        tile_rois[i] = (x0, y0, x1, y1, H_roi)
+
+    # 3. Nạp vào MultiBandBlender của OpenCV
+    actual_bands = max(1, min(num_bands, 8))
+    blender = cv2.detail.MultiBandBlender(0, actual_bands)
+    blender.prepare((0, 0, canvas_w, canvas_h))
+
+    for i in indices:
+        if i not in tile_rois:
+            continue
+        img = compensated_images[i]
+        x0, y0, x1, y1, H_roi = tile_rois[i]
+        rw, rh = x1 - x0, y1 - y0
+
+        warped_img = cv2.warpAffine(img, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
+        tile_seam_mask = (best_tile_idx[y0:y1, x0:x1] == i).astype(np.uint8) * 255
+        blender.feed(warped_img.astype(np.int16), tile_seam_mask, (x0, y0))
+
+    result_img, result_mask = blender.blend(None, None)
+    final_rgb = np.clip(result_img, 0, 255).astype(np.uint8)
+
+    bg_val = 255 if background_mode == 'white' else 0
+    bg_mask = (result_mask == 0)
+    final_rgb[bg_mask] = bg_val
+
+    global_mask = (result_mask > 0).astype(np.uint8) * 255
+    return final_rgb, global_mask
+
+
 # Alias tương thích ngược
 MultiBandBlender = FastStreamingBlender

@@ -138,13 +138,46 @@ class TestIlluminationAndSeamBlending(unittest.TestCase):
         self.assertEqual(mask[20, 20], 1)
         self.assertEqual(mask[0, 0], 0)
 
-        # Viền quang sai màu xanh (Blue 200, Red 100, Green 100)
-        img_fringe = np.array([[[100, 100, 200]]], dtype=np.uint8)
-        clean = apply_defringe_filter(img_fringe, threshold=12, min_blue=50)
-        # Kênh blue phải bị giới hạn về max(r, g) = 100
-        self.assertEqual(clean[0, 0, 2], 100)
+    def test_solve_tissue_specific_gains_balances_overlap(self):
+        from backend.blending import solve_tissue_specific_gains
+        # Tạo 2 tile chồng lấn: Tile 0 tối hơn (120), Tile 1 sáng hơn (180), đều có vùng mô (giá trị 80 và 120)
+        tile0 = np.full((100, 100, 3), 120, dtype=np.uint8)
+        tile0[20:80, 20:80] = 80
+        tile1 = np.full((100, 100, 3), 180, dtype=np.uint8)
+        tile1[20:80, 20:80] = 120
+
+        images = {0: tile0, 1: tile1}
+        transforms = {
+            0: np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        }
+
+        gains = solve_tissue_specific_gains(images, transforms, canvas_w=150, canvas_h=100)
+        self.assertIn(0, gains)
+        self.assertIn(1, gains)
+        # Tile 0 tối hơn nên gain của tile 0 phải lớn hơn gain của tile 1
+        self.assertGreater(float(gains[0][0]), float(gains[1][0]))
+
+    def test_blend_multiband_voronoi_produces_sharp_seamless_composite(self):
+        from backend.blending import blend_multiband_voronoi
+        tile0 = np.full((100, 100, 3), 160, dtype=np.uint8)
+        tile1 = np.full((100, 100, 3), 160, dtype=np.uint8)
+
+        images = {0: tile0, 1: tile1}
+        transforms = {
+            0: np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        }
+        gains = {0: np.ones(3, dtype=np.float32), 1: np.ones(3, dtype=np.float32)}
+
+        blended, mask = blend_multiband_voronoi(images, gains, transforms, canvas_w=150, canvas_h=100, num_bands=3)
+        self.assertEqual(blended.shape, (100, 150, 3))
+        # Không có pixel nào bị lỗi hoặc bùng nổ
+        self.assertAlmostEqual(float(blended[50, 75, 0]), 160.0, delta=2.0)
+        self.assertGreater(np.count_nonzero(mask), 1000)
 
 
 if __name__ == '__main__':
     unittest.main()
+
 

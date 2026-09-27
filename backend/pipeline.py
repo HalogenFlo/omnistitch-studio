@@ -12,7 +12,14 @@ from backend.io_utils import read_image, save_tiff
 from backend.feature_engine import FeatureEngine
 from backend.matcher import FeatureMatcher
 from backend.global_stitching import GlobalStitcher
-from backend.blending import FastStreamingBlender, equalize_tile_illumination, compensate_overlap_exposure
+from backend.blending import (
+    FastStreamingBlender,
+    equalize_tile_illumination,
+    compensate_overlap_exposure,
+    solve_tissue_specific_gains,
+    blend_multiband_voronoi,
+    apply_defringe_filter
+)
 from backend.postprocessing import find_largest_inscribed_rectangle
 from backend.wsi_exporter import export_wsi_multiformat
 
@@ -99,10 +106,11 @@ def run_wsi_stitching_pipeline(
         images[i] = source_images[i][:, :, :3] if source_images[i].ndim == 3 and source_images[i].shape[2] == 4 else source_images[i]
         report(5 + int(20 * (i + 1) / n_images), f"Loaded tile {i+1}/{n_images}: {os.path.basename(path)}")
 
-    # Đồng bộ màu sắc và chuẩn hóa ánh sáng nền kính hiển vi giữa các ô ảnh
-    report(24, "Normalizing microscopy flat-field illumination & color balance...")
-    source_images = equalize_tile_illumination(source_images, enable_gaussian_smoothing=enable_gaussian_smoothing)
-    images = {i: (img[:, :, :3] if img.ndim == 3 and img.shape[2] == 4 else img) for i, img in source_images.items()}
+    # Tiền xử lý ánh sáng (chỉ khi được yêu cầu rõ ràng và không dùng cân bằng phơi sáng mô học)
+    if enable_gaussian_smoothing and not compensate_exposure:
+        report(24, "Normalizing microscopy flat-field illumination & color balance...")
+        source_images = equalize_tile_illumination(source_images, enable_gaussian_smoothing=True)
+        images = {i: (img[:, :, :3] if img.ndim == 3 and img.shape[2] == 4 else img) for i, img in source_images.items()}
 
     # Kiểm tra xem có thể tái sử dụng tọa độ layers đã căn chỉnh chuẩn từ Studio không
     has_valid_project = False
@@ -230,22 +238,34 @@ def run_wsi_stitching_pipeline(
             f"Canvas {canvas_w}x{canvas_h} cần khoảng {estimated_canvas_bytes / (1024 * 1024):.0f} MB, exceed budget {max_memory_mb} MB"
         )
 
-    # 5. Tích lũy và hòa trộn Voronoi Adaptive Seam Blending
+    # 5. Cân bằng phơi sáng mô học chuẩn kietlearntocode/stitch
     if compensate_exposure and len(source_images) > 1:
-        report(72, "Balancing exposure & brightness across overlapping tiles...")
-        source_images = compensate_overlap_exposure(source_images, adjusted_transforms, motion_model=motion_model)
+        report(72, "Balancing tissue-specific overlap exposure (kietlearntocode/stitch)...")
+        tile_gains = solve_tissue_specific_gains(source_images, adjusted_transforms, canvas_w, canvas_h)
+    else:
+        tile_gains = {i: np.ones(3, dtype=np.float32) for i in source_images}
 
-    report(75, f"Initializing Gigapixel Canvas ({canvas_w}x{canvas_h} px)...")
-    blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode, focus_stacking=True, enhance_clarity=enhance_clarity)
+    # 6. Hòa trộn đa băng tần Laplacian Voronoi Seam (Loại bỏ 100% hiện tượng mờ ảnh & viền ô)
+    report(75, f"Multi-Band Laplacian Pyramid Blending ({canvas_w}x{canvas_h} px)...")
+    try:
+        blended_image, global_mask = blend_multiband_voronoi(
+            source_images, tile_gains, adjusted_transforms, canvas_w, canvas_h, num_bands=5, background_mode=background_mode
+        )
+    except Exception as e_mb:
+        # Fallback FastStreamingBlender nếu bộ nhớ hệ thống quá tải
+        blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode, focus_stacking=False, enhance_clarity=enhance_clarity)
+        for i, img in source_images.items():
+            g = tile_gains.get(i, np.ones(3, dtype=np.float32))
+            img_c = np.clip(img[:, :, :3].astype(np.float32) * g[None, None, :], 0, 255).astype(np.uint8)
+            blender.accumulate_tile(img_c, adjusted_transforms[i], motion_model=motion_model)
+        blended_image, global_mask = blender.finalize()
 
-    for i, img in source_images.items():
-        H = adjusted_transforms[i]
-        blender.accumulate_tile(img, H, motion_model=motion_model)
-        report(75 + int(15 * (i + 1) / n_images), f"Blending tile {i+1}/{n_images} into canvas...")
-
-    # 6. Chuẩn hóa kết quả ảnh hoàn chỉnh
-    report(90, "Extracting sharp panorama composite...")
-    blended_image, global_mask = blender.finalize()
+    # 7. Khử quang sai sắc biên giới (Chromatic Aberration Defringe)
+    report(90, "Applying chromatic aberration defringe filter...")
+    blended_image = apply_defringe_filter(blended_image)
+    if enhance_clarity:
+        from backend.blending import enhance_cellular_clarity
+        blended_image = enhance_cellular_clarity(blended_image, strength=0.35)
 
     # 7. Tự động Crop hình chữ nhật nếu bật
     crop_x = crop_y = 0
