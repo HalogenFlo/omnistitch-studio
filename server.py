@@ -33,7 +33,7 @@ if "IMAGE_ALIGNMENT_MAX_MEMORY_MB" not in os.environ:
         os.environ["IMAGE_ALIGNMENT_MAX_MEMORY_MB"] = "2048"
 
 import cv2
-from backend.io_utils import read_image, save_tiff, create_thumbnail, get_image_metadata
+from backend.io_utils import read_image, save_tiff, create_thumbnail, get_image_metadata, extract_case_code
 from backend.pipeline import run_wsi_stitching_pipeline
 
 PORT = int(os.environ.get("PORT", 5051))
@@ -107,10 +107,14 @@ def update_stitching_progress(percent, step_name, details):
 
 def background_stitching_worker(image_paths, options):
     global stitching_task
+    folder_name = options.get("customOutputName") or "stitched_wsi"
+    case_code = extract_case_code(folder_name)
+    target_output_dir = os.path.join(OUTPUTS_DIR, case_code) if case_code and case_code != "ungrouped" else OUTPUTS_DIR
+    os.makedirs(target_output_dir, exist_ok=True)
     try:
         result = run_wsi_stitching_pipeline(
             image_paths=image_paths,
-            output_dir=OUTPUTS_DIR,
+            output_dir=target_output_dir,
             feature_method=options.get("featureMethod", "sift"),
             motion_model=options.get("motionModel", "affine"),
             background_mode=options.get("backgroundMode", "white"),
@@ -124,6 +128,8 @@ def background_stitching_worker(image_paths, options):
             compensate_exposure=options.get("compensateExposure", True),
             blending_mode=options.get("blendingMode", "multiband")
         )
+        result["case_code"] = case_code
+        result["output_relative_folder"] = f"data/result/{case_code}" if case_code and case_code != "ungrouped" else "data/result"
         with stitching_task_lock:
             stitching_task["result"] = result
 
@@ -417,6 +423,15 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             fallback = os.path.join(OUTPUTS_DIR, os.path.basename(abs_path))
             abs_path = _contained_path(OUTPUTS_DIR, fallback)
 
+        # Fallback nếu file được nhóm theo case_code trong data/result/<case_code>/
+        if not os.path.exists(abs_path):
+            filename = os.path.basename(abs_path)
+            case_code = extract_case_code(os.path.splitext(filename)[0])
+            if case_code and case_code != "ungrouped":
+                candidate = os.path.join(OUTPUTS_DIR, case_code, filename)
+                if os.path.exists(candidate):
+                    abs_path = candidate
+
         if not os.path.exists(abs_path):
             self.send_error(404, "Image Not Found")
             return
@@ -442,6 +457,15 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         rel_path = query['path'][0]
         try:
             abs_path = self.resolve_path(rel_path)
+            if not os.path.exists(abs_path):
+                # Fallback tìm kiếm trong thư mục case_code của data/result
+                filename = os.path.basename(abs_path)
+                case_code = extract_case_code(os.path.splitext(filename)[0])
+                if case_code and case_code != "ungrouped":
+                    candidate = os.path.join(OUTPUTS_DIR, case_code, filename)
+                    if os.path.isfile(candidate):
+                        abs_path = candidate
+
             if not _is_allowed_image_path(abs_path):
                 raise ValueError("Image path outside approved data directories")
         except (ValueError, OSError):
@@ -540,17 +564,39 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         # /dzi/... ví dụ: /dzi/1033-YCT26_A_dzi/1033-YCT26_A.dzi hoặc /dzi/1033-YCT26_A_dzi/1033-YCT26_A_files/10/0_0.jpg
         rel = urllib.parse.unquote(req_path[len("/dzi/"):])
 
-        # Thử 1: Trực tiếp trong OUTPUTS_DIR (data/output)
+        # Thử 1: Trực tiếp trong OUTPUTS_DIR (data/result)
         target_path = os.path.abspath(os.path.join(OUTPUTS_DIR, rel))
+        if not os.path.exists(target_path):
+            # Thử 2: Tìm trong thư mục con theo case_code (data/result/<case_code>/rel)
+            parts = rel.replace('\\', '/').split('/', 1)
+            dzi_folder = parts[0]
+            base_name = dzi_folder[:-4] if dzi_folder.endswith('_dzi') else dzi_folder
+            case_code = extract_case_code(base_name)
+            if case_code and case_code != "ungrouped":
+                candidate = os.path.abspath(os.path.join(OUTPUTS_DIR, case_code, rel))
+                if os.path.exists(candidate):
+                    target_path = candidate
+
         try:
             target_path = _contained_path(OUTPUTS_DIR, target_path)
         except ValueError:
             self.send_error(403, "DZI path outside output directory")
             return
 
-        # Thử 2: Trong data/output nếu path thiếu
+        # Thử 3: Trong data/output nếu path thiếu
         if not os.path.exists(target_path):
             alt_path = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", rel))
+            if not os.path.exists(alt_path):
+                # Thử tìm trong batch_stitched
+                parts = rel.replace('\\', '/').split('/', 1)
+                dzi_folder = parts[0]
+                base_name = dzi_folder[:-4] if dzi_folder.endswith('_dzi') else dzi_folder
+                case_code = extract_case_code(base_name)
+                for sub in ["4X", "10X", ""]:
+                    cand = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", "batch_stitched", sub, case_code, rel))
+                    if os.path.exists(cand):
+                        alt_path = cand
+                        break
             try:
                 alt_path = _contained_path(os.path.join(WORKSPACE_DIR, "data", "output"), alt_path)
             except ValueError:
@@ -923,11 +969,15 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             def run_export():
                 global stitching_task
                 try:
+                    folder_name = proj.folderName or proj_id
+                    case_code = extract_case_code(folder_name)
+                    target_out_dir = os.path.join(OUTPUTS_DIR, case_code) if case_code and case_code != "ungrouped" else OUTPUTS_DIR
+                    os.makedirs(target_out_dir, exist_ok=True)
                     res = export_manual_project(
                         proj,
-                        output_dir=OUTPUTS_DIR,
+                        output_dir=target_out_dir,
                         workspace_root=WORKSPACE_DIR,
-                        output_name=proj.folderName or proj_id,
+                        output_name=folder_name,
                         export_format=data.get("exportFormat") or "tif",
                         background_mode=data.get("backgroundMode") or "white",
                         progress_callback=update_progress
@@ -964,7 +1014,13 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             if os.path.basename(folder_name) != folder_name or export_format.lower() not in ('tif', 'tiff', 'png', 'jpg', 'jpeg', 'bmp'):
                 self.send_json({"error": "Tên output hoặc định dạng is invalid"}, status=400)
                 return
-            abs_target_dir = self.resolve_path(target_dir)
+
+            case_code = extract_case_code(folder_name)
+            abs_base_target = self.resolve_path(target_dir)
+            if case_code and case_code != "ungrouped" and not abs_base_target.replace('\\', '/').rstrip('/').endswith(case_code):
+                abs_target_dir = os.path.join(abs_base_target, case_code)
+            else:
+                abs_target_dir = abs_base_target
 
             os.makedirs(abs_target_dir, exist_ok=True)
             out_filename = f"{folder_name}.{export_format}"
@@ -976,12 +1032,21 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 candidate = self.resolve_path(source_preview_file)
                 if os.path.exists(candidate):
                     src = candidate
+                elif case_code and case_code != "ungrouped":
+                    cand_in_case = os.path.join(OUTPUTS_DIR, case_code, os.path.basename(candidate))
+                    if os.path.exists(cand_in_case):
+                        src = cand_in_case
             else:
-                default_preview = os.path.join(WORKSPACE_DIR, "data", "result", out_filename)
-                if not os.path.exists(default_preview):
-                    default_preview = os.path.join(WORKSPACE_DIR, "data", "output", out_filename)
-                if os.path.exists(default_preview):
-                    src = os.path.abspath(default_preview)
+                if case_code and case_code != "ungrouped":
+                    case_preview = os.path.join(OUTPUTS_DIR, case_code, out_filename)
+                    if os.path.exists(case_preview):
+                        src = os.path.abspath(case_preview)
+                if not src:
+                    default_preview = os.path.join(WORKSPACE_DIR, "data", "result", out_filename)
+                    if not os.path.exists(default_preview):
+                        default_preview = os.path.join(WORKSPACE_DIR, "data", "output", out_filename)
+                    if os.path.exists(default_preview):
+                        src = os.path.abspath(default_preview)
 
             if not src or not os.path.exists(src):
                 return self.send_json({"error": "Không tìm thấy dữ liệu ảnh đã ghép. Hãy bấm Ghép Ảnh trước."}, status=400)

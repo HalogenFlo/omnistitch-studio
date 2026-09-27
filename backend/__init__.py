@@ -1,5 +1,5 @@
 # Backend package for WSI Stitching Engine
-from backend.io_utils import read_image, save_tiff, create_thumbnail
+from backend.io_utils import read_image, save_tiff, create_thumbnail, extract_case_code
 from backend.feature_engine import FeatureEngine
 from backend.matcher import FeatureMatcher
 from backend.global_stitching import GlobalStitcher
