@@ -39,6 +39,21 @@ def compute_local_sharpness_map(img_rgb, kernel_size=15):
     return sharpness_smooth
 
 
+def compute_tile_global_sharpness(img_rgb):
+    """
+    Tính phương sai Laplacian của tile ảnh để đo mức độ in-focus tổng thể.
+    Tile nét có giá trị cao (150-300+), tile mờ out-of-focus có giá trị thấp (<60).
+    """
+    if img_rgb is None or img_rgb.size == 0:
+        return 1.0
+    if img_rgb.ndim == 3:
+        gray = cv2.cvtColor(img_rgb[:, :, :3], cv2.COLOR_RGB2GRAY)
+    else:
+        gray = img_rgb
+    lap = cv2.Laplacian(gray, cv2.CV_32F)
+    return float(np.var(lap))
+
+
 def enhance_cellular_clarity(image, strength=0.35):
     """
     Làm rõ nét vi thể tế bào (Cellular Clarity & Microscopic Detail Sharpening).
@@ -588,8 +603,10 @@ class FastStreamingBlender:
         # Kết hợp điều biến độ nét cục bộ nếu bật focus stacking
         if self.focus_stacking:
             sharpness_map = compute_local_sharpness_map(warped_straight, kernel_size=15)
+            tile_sh = compute_tile_global_sharpness(warped_straight)
+            g_focus = max(0.01, (tile_sh / 100.0) ** 2.0)
             edge_ramp = np.clip(dist_map / 15.0, 0.0, 1.0)
-            quality_metric = (edge_ramp * (sharpness_map ** 2.5 + 0.02 * dist_map)).astype(np.float32)
+            quality_metric = (edge_ramp * (g_focus * (sharpness_map ** 2.0) + 0.001 * dist_map)).astype(np.float32)
         else:
             quality_metric = dist_map
 
@@ -778,6 +795,13 @@ def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, c
         compensated_images[i] = np.clip(img_f, 0.0, 255.0).astype(np.uint8)
 
     # 2. Tạo mặt nạ Voronoi Seam Partitioning với Sharpness Dominance
+    tile_global_sharpness = {}
+    for i in indices:
+        tile_global_sharpness[i] = compute_tile_global_sharpness(compensated_images[i])
+
+    med_sharpness = float(np.median(list(tile_global_sharpness.values()))) if tile_global_sharpness else 1.0
+    med_sharpness = max(1.0, med_sharpness)
+
     max_dist = np.zeros((canvas_h, canvas_w), dtype=np.float32)
     best_tile_idx = np.full((canvas_h, canvas_w), -1, dtype=np.int16)
     tile_rois = {}
@@ -812,11 +836,14 @@ def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, c
         sharpness_map = compute_local_sharpness_map(compensated_images[i], kernel_size=15)
         warped_sharpness = cv2.warpAffine(sharpness_map, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderValue=0.0)
 
+        # Hệ số ưu tiên độ nét toàn tile: tile in-focus (rõ) áp đảo hoàn toàn tile out-of-focus (mờ)
+        g_focus = max(0.01, float(tile_global_sharpness[i] / med_sharpness) ** 2.0)
+
         # Trọng số chất lượng:
         # edge_ramp đảm bảo mép cắt ngoài cùng 15px được làm mượt
         edge_ramp = np.clip(warped_dist / 15.0, 0.0, 1.0)
-        # Độ nét vi thể là yếu tố thống trị: tile rõ nét (sharpness cao) áp đảo tuyệt đối tile mờ
-        tile_quality = (edge_ramp * (warped_sharpness ** 2.5 + 0.02 * warped_dist)).astype(np.float32)
+        # Độ nét vi thể kết hợp độ nét toàn tile: tile rõ nét áp đảo hoàn toàn tile mờ
+        tile_quality = (edge_ramp * (g_focus * (warped_sharpness ** 2.0) + 0.001 * warped_dist)).astype(np.float32)
 
         canvas_d_sub = max_dist[y0:y1, x0:x1]
         canvas_idx_sub = best_tile_idx[y0:y1, x0:x1]

@@ -78,6 +78,7 @@
         btnLayerUp: document.getElementById('btnLayerUp'),
         btnLayerDown: document.getElementById('btnLayerDown'),
         btnLayerLock: document.getElementById('btnLayerLock'),
+        btnAutoStackSharpness: document.getElementById('btnAutoStackSharpness'),
 
         // Configs
         cfgFeatureMethod: document.getElementById('cfgFeatureMethod'),
@@ -742,6 +743,36 @@
             const sel = ProjectStore.getSelectedLayer();
             if (sel) ProjectStore.updateLayerProperties(sel.id, { locked: !sel.locked });
         });
+
+        if (DOM.btnAutoStackSharpness) {
+            DOM.btnAutoStackSharpness.addEventListener('click', async () => {
+                const state = ProjectStore.getState();
+                if (!state.id || !state.layers || state.layers.length === 0) {
+                    alert("Không có layer nào để sắp xếp.");
+                    return;
+                }
+                setStatus('busy', 'Đang quét độ nét vi thể và sắp xếp layer...');
+                try {
+                    const res = await fetch(`/api/projects/${encodeURIComponent(state.id)}/sort_sharpness`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ project: state })
+                    });
+                    const d = await res.json();
+                    if (d.status === 'success') {
+                        await loadProjectSession(state.id);
+                        CanvasEngine.requestRender();
+                        setStatus('ready', '✔ Đã tự động sắp xếp: Tấm rõ nét nhất đã nổi lên trên cùng!');
+                    } else {
+                        alert("Lỗi: " + (d.error || "Không thể sắp xếp"));
+                        setStatus('ready', 'Ready');
+                    }
+                } catch (err) {
+                    alert("Lỗi kết nối: " + err.message);
+                    setStatus('ready', 'Ready');
+                }
+            });
+        }
     }
 
     // ==========================================

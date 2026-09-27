@@ -256,6 +256,9 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/projects/") and path.endswith("/exports"):
             proj_id = urllib.parse.unquote(path.split("/")[3])
             self.handle_manual_export(proj_id)
+        elif path.startswith("/api/projects/") and path.endswith("/sort_sharpness"):
+            proj_id = urllib.parse.unquote(path.split("/")[3])
+            self.handle_sort_project_sharpness(proj_id)
         elif path == "/api/scan_folder":
             self.handle_scan_folder()
         elif path == "/api/upload":
@@ -370,13 +373,26 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 except Exception as ex:
                     print(f"Warning: Không đọc được metadata {full_p}: {ex}")
 
+                sharpness = 0.0
+                try:
+                    # Đo độ nét vi thể của tile
+                    img_thumb = create_thumbnail(read_image(full_p), max_size=(320, 320))
+                    g_thumb = cv2.cvtColor(img_thumb, cv2.COLOR_RGB2GRAY) if img_thumb.ndim == 3 else img_thumb
+                    sharpness = float(np.var(cv2.Laplacian(g_thumb, cv2.CV_32F)))
+                except Exception:
+                    pass
+
                 image_items.append({
                     "name": f,
                     "path": rel,
                     "fullPath": full_p,
                     "width": meta.get("width", 2000),
-                    "height": meta.get("height", 1500)
+                    "height": meta.get("height", 1500),
+                    "sharpness": sharpness
                 })
+
+            # Sắp xếp theo độ nét tăng dần để tile rõ nét nhất có zIndex cao nhất (nổi trên cùng)
+            image_items.sort(key=lambda x: x.get("sharpness", 0.0))
 
             self.send_json({
                 "status": "success",
@@ -926,6 +942,42 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             self.send_header("X-Valid-Coverage", str(patch_result["valid_coverage"]))
             self.end_headers()
             self.wfile.write(png_bytes)
+        except Exception as e:
+            self.send_json({"error": str(e)}, status=500)
+
+    def handle_sort_project_sharpness(self, proj_id):
+        """Tự động sắp xếp zIndex của các layer theo độ nét thực tế (layer nét nhất nằm trên cùng)"""
+        try:
+            from backend.project_store import load_project, save_project
+            proj = load_project(proj_id)
+            if not proj or not proj.layers:
+                self.send_json({"error": "Project not found or has no layers"}, status=404)
+                return
+
+            scored_layers = []
+            for l in proj.layers:
+                abs_p = self.resolve_path(l.sourcePath) if l.sourcePath else None
+                score = 0.0
+                if abs_p and os.path.exists(abs_p):
+                    try:
+                        thumb = create_thumbnail(read_image(abs_p), max_size=(320, 320))
+                        g = cv2.cvtColor(thumb, cv2.COLOR_RGB2GRAY) if thumb.ndim == 3 else thumb
+                        score = float(np.var(cv2.Laplacian(g, cv2.CV_32F)))
+                    except Exception:
+                        pass
+                scored_layers.append((l, score))
+
+            # Sắp xếp tăng dần theo độ nét: mờ nhất zIndex nhỏ nhất, nét nhất zIndex lớn nhất
+            scored_layers.sort(key=lambda x: x[1])
+            for new_z, (l, _) in enumerate(scored_layers):
+                l.zIndex = new_z
+
+            save_project(proj)
+            self.send_json({
+                "status": "success",
+                "message": "Đã tự động sắp xếp layer theo độ nét: ảnh nét nhất nằm trên cùng!",
+                "revision": proj.revision
+            })
         except Exception as e:
             self.send_json({"error": str(e)}, status=500)
 
