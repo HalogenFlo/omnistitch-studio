@@ -61,7 +61,7 @@ def run_wsi_stitching_pipeline(
     enable_gaussian_smoothing=True,
     enhance_clarity=False,
     compensate_exposure=True,
-    blending_mode='legacy'
+    blending_mode='multiband'
 ):
     """
     Automated gigapixel mosaic stitching pipeline:

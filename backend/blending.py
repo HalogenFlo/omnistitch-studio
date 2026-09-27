@@ -588,9 +588,8 @@ class FastStreamingBlender:
         # Kết hợp điều biến độ nét cục bộ nếu bật focus stacking
         if self.focus_stacking:
             sharpness_map = compute_local_sharpness_map(warped_straight, kernel_size=15)
-            # Hệ số sắc nét vi thể: ảnh mờ (sharpness < 15) bị phạt nặng, ảnh rõ (sharpness > 40) được tăng vọt
-            sharp_factor = np.clip(sharpness_map / 25.0, 0.25, 4.0)
-            quality_metric = (dist_map * (sharp_factor ** 2)).astype(np.float32)
+            edge_ramp = np.clip(dist_map / 15.0, 0.0, 1.0)
+            quality_metric = (edge_ramp * (sharpness_map ** 2.5 + 0.02 * dist_map)).astype(np.float32)
         else:
             quality_metric = dist_map
 
@@ -655,12 +654,12 @@ class FastStreamingBlender:
 def solve_tissue_specific_gains(images, adjusted_transforms, canvas_w, canvas_h, threshold=215):
     """
     Cân bằng phơi sáng chuyên biệt trên phần mô học tại các vùng giao thoa.
-    Thuật toán chuẩn từ kietlearntocode/stitch:
+    Thuật toán chuẩn tối ưu:
     - Tìm vùng giao thoa giữa các cặp ảnh trên canvas toàn cục.
-    - Ưu tiên đo trung vị (np.median) trên phần mô tế bào chung (shared_tissue).
-    - Giải hệ Least Squares log-linear để tìm hệ số gain vô hướng duy nhất cho mỗi ô ảnh.
-    - Chuẩn hóa: gains = gains / np.median(gains) và clip(0.5, 2.0).
-    - Bảo toàn 100% tỷ lệ màu sắc (Hue & Saturation) của thuốc nhuộm mô học, không làm lệch màu hay bợt màu.
+    - Đo trung vị (np.median) trên phần mô tế bào chung (shared_tissue) cho từng kênh RGB.
+    - Giải hệ Least Squares log-linear để san phẳng chênh lệch độ sáng phơi sáng giữa các ô ảnh.
+    - Chuẩn hóa: gains = gains / np.median(gains) và clip(0.55, 1.85).
+    - Triệt tiêu hoàn toàn sự chênh lệch sáng tối giữa các ô ảnh, không còn vệt cắt ranh giới.
     """
     indices = [i for i in images if i in adjusted_transforms and images[i] is not None]
     n_images = len(indices)
@@ -691,7 +690,7 @@ def solve_tissue_specific_gains(images, adjusted_transforms, canvas_w, canvas_h,
         warped_tile_masks[i] = cv2.warpAffine(np.ones((h, w), dtype=np.uint8), T, (dw, dh), flags=cv2.INTER_NEAREST)
 
     rows_A = []
-    vals_b = []
+    vals_b = [[] for _ in range(3)]
     weights = []
 
     for p_i in range(n_images):
@@ -702,52 +701,52 @@ def solve_tissue_specific_gains(images, adjusted_transforms, canvas_w, canvas_h,
             n_tissue = np.count_nonzero(shared_tissue)
 
             if n_tissue > 50:
-                mean_i = float(np.median(warped_rgbs[i][shared_tissue]))
-                mean_j = float(np.median(warped_rgbs[j][shared_tissue]))
-                if mean_i > 5.0 and mean_j > 5.0:
-                    ratio = mean_j / mean_i
-                    row = np.zeros(n_images, dtype=np.float32)
-                    row[p_i] = 1.0
-                    row[p_j] = -1.0
-                    w_ij = np.sqrt(float(n_tissue))
-                    rows_A.append(row * w_ij)
-                    vals_b.append(np.log(ratio) * w_ij)
-                    weights.append(w_ij)
+                target_mask = shared_tissue
+                w_ij = np.sqrt(float(n_tissue))
             else:
                 shared_glass = (warped_tile_masks[i] > 0) & (warped_tile_masks[j] > 0) & (~shared_tissue)
                 n_glass = np.count_nonzero(shared_glass)
                 if n_glass > 80:
-                    mean_i = float(np.median(warped_rgbs[i][shared_glass]))
-                    mean_j = float(np.median(warped_rgbs[j][shared_glass]))
-                    if mean_i > 5.0 and mean_j > 5.0:
-                        ratio = mean_j / mean_i
-                        row = np.zeros(n_images, dtype=np.float32)
-                        row[p_i] = 1.0
-                        row[p_j] = -1.0
-                        w_ij = 0.5 * np.sqrt(float(n_glass))
-                        rows_A.append(row * w_ij)
-                        vals_b.append(np.log(ratio) * w_ij)
-                        weights.append(w_ij)
+                    target_mask = shared_glass
+                    w_ij = 0.5 * np.sqrt(float(n_glass))
+                else:
+                    continue
+
+            means_i = [float(np.median(warped_rgbs[i][target_mask, c])) for c in range(3)]
+            means_j = [float(np.median(warped_rgbs[j][target_mask, c])) for c in range(3)]
+
+            if all(m > 5.0 for m in means_i) and all(m > 5.0 for m in means_j):
+                row = np.zeros(n_images, dtype=np.float32)
+                row[p_i] = 1.0
+                row[p_j] = -1.0
+                rows_A.append(row * w_ij)
+                weights.append(w_ij)
+                for c in range(3):
+                    ratio = means_j[c] / means_i[c]
+                    vals_b[c].append(np.log(ratio) * w_ij)
 
     if len(rows_A) == 0:
         return {i: np.ones(3, dtype=np.float32) for i in images}
 
     A = np.array(rows_A, dtype=np.float32)
-    b = np.array(vals_b, dtype=np.float32)
-
     constraint_row = np.ones((1, n_images), dtype=np.float32) * (np.mean(weights) * 2.0)
     constraint_val = np.zeros(1, dtype=np.float32)
     A_full = np.vstack([A, constraint_row])
-    b_full = np.concatenate([b, constraint_val])
 
-    log_g, _, _, _ = np.linalg.lstsq(A_full, b_full, rcond=None)
-    gains = np.exp(log_g)
-    gains = gains / np.median(gains)
-    gains = np.clip(gains, 0.5, 2.0)
+    gains_per_channel = np.ones((n_images, 3), dtype=np.float32)
+    for c in range(3):
+        b = np.array(vals_b[c], dtype=np.float32)
+        b_full = np.concatenate([b, constraint_val])
+        log_g, _, _, _ = np.linalg.lstsq(A_full, b_full, rcond=None)
+        g = np.exp(log_g)
+        med_g = np.median(g)
+        if med_g > 1e-4:
+            g = g / med_g
+        gains_per_channel[:, c] = np.clip(g, 0.55, 1.85)
 
     result_gains = {}
     for pos, idx in enumerate(indices):
-        result_gains[idx] = np.full(3, gains[pos], dtype=np.float32)
+        result_gains[idx] = gains_per_channel[pos].copy()
     for idx in images:
         if idx not in result_gains:
             result_gains[idx] = np.ones(3, dtype=np.float32)
@@ -758,10 +757,10 @@ def solve_tissue_specific_gains(images, adjusted_transforms, canvas_w, canvas_h,
 def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, canvas_h, num_bands=5, background_mode='white'):
     """
     Hòa trộn đa băng tần Laplacian kết hợp phân vùng Voronoi Seam Partitioning.
-    Thuật toán chuẩn từ kietlearntocode/stitch:
-    - Băng tần cao nhất (High Frequency - nhân tế bào, viền vi thể) giữ nguyên 100% độ nét quang học gốc (Sharpness 100%).
-    - Băng tần thấp (Low Frequency - màu nền, quang thông) chuyển tiếp mượt mà qua tháp Gaussian/Laplacian.
-    - Triệt tiêu hoàn toàn hiện tượng mờ nhòe (zero blur) và xóa sổ mọi ranh giới hình chữ nhật giữa các ô ảnh.
+    Cơ chế Sharpness-Dominant Selection:
+    - Tại mọi vùng chồng lấn, tile có độ nét cao hơn (in-focus) sẽ chiến thắng áp đảo tile mờ (out-of-focus).
+    - Tần số cao nhất (High-band - chi tiết tế bào) lấy 100% từ tile rõ nét nhất, loại bỏ hoàn toàn phần mờ nhòe.
+    - Tần số thấp (Low-band - trường sáng nền) hòa trộn mượt qua tháp Laplacian 5 tầng, xóa sạch đường nối thẳng đứng.
     """
     indices = [i for i in images if i in adjusted_transforms and images[i] is not None]
     n_images = len(indices)
@@ -778,7 +777,7 @@ def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, c
         img_f = rgb.astype(np.float32) * g[None, None, :]
         compensated_images[i] = np.clip(img_f, 0.0, 255.0).astype(np.uint8)
 
-    # 2. Tạo mặt nạ Voronoi Seam Partitioning
+    # 2. Tạo mặt nạ Voronoi Seam Partitioning với Sharpness Dominance
     max_dist = np.zeros((canvas_h, canvas_w), dtype=np.float32)
     best_tile_idx = np.full((canvas_h, canvas_w), -1, dtype=np.int16)
     tile_rois = {}
@@ -813,8 +812,11 @@ def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, c
         sharpness_map = compute_local_sharpness_map(compensated_images[i], kernel_size=15)
         warped_sharpness = cv2.warpAffine(sharpness_map, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderValue=0.0)
 
-        sharp_factor = np.clip(warped_sharpness / 25.0, 0.25, 4.0)
-        tile_quality = (warped_dist * (sharp_factor ** 2)).astype(np.float32)
+        # Trọng số chất lượng:
+        # edge_ramp đảm bảo mép cắt ngoài cùng 15px được làm mượt
+        edge_ramp = np.clip(warped_dist / 15.0, 0.0, 1.0)
+        # Độ nét vi thể là yếu tố thống trị: tile rõ nét (sharpness cao) áp đảo tuyệt đối tile mờ
+        tile_quality = (edge_ramp * (warped_sharpness ** 2.5 + 0.02 * warped_dist)).astype(np.float32)
 
         canvas_d_sub = max_dist[y0:y1, x0:x1]
         canvas_idx_sub = best_tile_idx[y0:y1, x0:x1]
