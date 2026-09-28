@@ -7,17 +7,16 @@ import numpy as np
 
 def compute_local_sharpness_map(img_rgb, kernel_size=15):
     """
-    Calculates localized absolute microscopic sharpness/focus map
-    Đo đạc năng lượng độ nét vi thể tuyệt đối:
+    Calculates localized microscopic sharpness/focus map
+    Kết hợp 3 tiêu chí:
     1. Tenengrad Gradient (Độ tương phản biên vi thể)
     2. Modified Laplacian (Độ sắc nét nhân tế bào)
-    Giữ nguyên thang đo năng lượng thực tế (không chuẩn hóa co cụm cục bộ từng ảnh) để so sánh trực tiếp giữa các tile:
-    Tile rõ nét (in-focus) sẽ có năng lượng cao vượt trội so với tile bị trôi nét/mờ (out-of-focus).
+    3. Local Variance (Năng lượng kết cấu mô học - vùng rõ nét có variance cao vượt trội so với vùng out-focus mờ)
     """
-    if img_rgb.ndim == 3:
-        gray = cv2.cvtColor(img_rgb[:, :, :3].astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    if len(img_rgb.shape) == 3:
+        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
     else:
-        gray = img_rgb.astype(np.uint8)
+        gray = img_rgb.copy()
 
     gray_f = gray.astype(np.float32)
 
@@ -29,8 +28,15 @@ def compute_local_sharpness_map(img_rgb, kernel_size=15):
     # 2. Gradient bậc 2 (Laplacian vi phân tế bào)
     lap_mag = np.abs(cv2.Laplacian(gray_f, cv2.CV_32F, ksize=3))
 
-    # Tổng hợp năng lượng độ nét vi thể thực tế
-    sharpness_raw = grad_mag + 0.8 * lap_mag
+    # 3. Local Standard Deviation / Texture Energy
+    k = kernel_size if kernel_size % 2 != 0 else kernel_size + 1
+    mean = cv2.blur(gray_f, (k, k))
+    sq_mean = cv2.blur(gray_f * gray_f, (k, k))
+    variance = np.maximum(0.0, sq_mean - mean * mean)
+    local_std = np.sqrt(variance)
+
+    # Tổng hợp năng lượng độ nét
+    sharpness_raw = grad_mag + 0.8 * lap_mag + 0.6 * local_std
 
     # Logic gốc của commit 4d17bbe (26/09): làm mượt rồi chuẩn hóa
     # từng tile về [0, 10], chỉ điều biến nhẹ quality theo độ nét.
@@ -41,20 +47,7 @@ def compute_local_sharpness_map(img_rgb, kernel_size=15):
     else:
         sharpness_norm = np.zeros_like(sharpness_smooth)
 
-
-def compute_tile_global_sharpness(img_rgb):
-    """
-    Tính phương sai Laplacian của tile ảnh để đo mức độ in-focus tổng thể.
-    Tile nét có giá trị cao (150-300+), tile mờ out-of-focus có giá trị thấp (<60).
-    """
-    if img_rgb is None or img_rgb.size == 0:
-        return 1.0
-    if img_rgb.ndim == 3:
-        gray = cv2.cvtColor(img_rgb[:, :, :3], cv2.COLOR_RGB2GRAY)
-    else:
-        gray = img_rgb
-    lap = cv2.Laplacian(gray, cv2.CV_32F)
-    return float(np.var(lap))
+    return sharpness_norm
 
 
 
@@ -110,12 +103,11 @@ def estimate_flat_field_profile(source_images):
     if len(bg_luma_maps) < 2:
         return None
 
-    import warnings
     stack = np.stack(bg_luma_maps, axis=0)
-    with warnings.catch_warnings(), np.errstate(all='ignore'):
-        warnings.simplefilter('ignore', category=RuntimeWarning)
+    with np.errstate(all='ignore'):
         avg_luma = np.nanmedian(stack, axis=0)
-        global_med = float(np.nanmedian(avg_luma))
+
+    global_med = float(np.nanmedian(avg_luma))
     if np.isnan(global_med) or global_med < 1e-4:
         clean_stack = [cv2.resize(img[:, :, :3].astype(np.float32), (down_w, down_h)) for img in source_images.values()]
         avg_luma = np.mean([0.299 * s[:, :, 0] + 0.587 * s[:, :, 1] + 0.114 * s[:, :, 2] for s in clean_stack], axis=0)
@@ -141,7 +133,6 @@ def equalize_tile_illumination(source_images, enable_gaussian_smoothing=True):
     Tự động chuẩn hóa màu nền và cân bằng phơi sáng giữa các ô ảnh kính hiển vi (Microscopy Flat-Field & Background Normalization).
     - enable_gaussian_smoothing: Nếu True, áp dụng khử tối góc quang học 2D để trường sáng đồng đều từ tâm ra 4 góc.
       Nếu False, chỉ cân bằng gain màu nền để giữ nguyên độ tương phản quang học gốc.
-    - Tự động nhận diện nền lam kính thực sự (True Microscope Background Exclusion) để tránh làm cháy sáng mô tế bào.
     """
     if not source_images or len(source_images) <= 1:
         return source_images
@@ -152,8 +143,6 @@ def equalize_tile_illumination(source_images, enable_gaussian_smoothing=True):
     # 2. Khử tối góc 2D và thu thập mức nền chuẩn xác của từng ô ảnh
     bg_levels = {}
     flat_images = {}
-    tissue_only_tiles = set()
-
     for i, img in source_images.items():
         if img is None or img.size == 0:
             continue
@@ -176,35 +165,16 @@ def equalize_tile_illumination(source_images, enable_gaussian_smoothing=True):
 
         flat_images[i] = flat_rgb
 
-        # Phát hiện nền lam kính thực sự dựa trên độ bão hòa màu thấp và độ sáng cao
-        hsv = cv2.cvtColor(np.clip(flat_rgb, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
-        sat = hsv[:, :, 1]
-        val = hsv[:, :, 2]
-        bg_mask = alpha_mask & (sat < 40) & (val > 110)
-
-        n_bg_px = np.count_nonzero(bg_mask)
-        total_valid = np.count_nonzero(alpha_mask)
-
-        # Nếu tile có ít nhất 2% diện tích là nền lam kính (hoặc > 200 pixels)
-        if n_bg_px >= max(200, int(total_valid * 0.02)):
-            bg_pixels = flat_rgb[bg_mask]
-            luma_bg = 0.299 * bg_pixels[:, 0] + 0.587 * bg_pixels[:, 1] + 0.114 * bg_pixels[:, 2]
-            p80 = np.percentile(luma_bg, 80)
-            clean_bg = bg_pixels[luma_bg >= p80]
-            bg_levels[i] = np.mean(clean_bg, axis=0) if len(clean_bg) > 0 else np.mean(bg_pixels, axis=0)
+        valid_pixels = flat_rgb[alpha_mask]
+        luma = 0.299 * valid_pixels[:, 0] + 0.587 * valid_pixels[:, 1] + 0.114 * valid_pixels[:, 2]
+        p90 = np.percentile(luma, 90)
+        bg_pixels = valid_pixels[luma >= p90]
+        if len(bg_pixels) >= 10:
+            bg_levels[i] = np.mean(bg_pixels, axis=0)
         else:
-            # Tile toàn mô tế bào (không có nền trống), không lấy percentile của mô làm nền tránh cháy sáng
-            valid_pixels = flat_rgb[alpha_mask]
-            luma = 0.299 * valid_pixels[:, 0] + 0.587 * valid_pixels[:, 1] + 0.114 * valid_pixels[:, 2]
-            p90 = np.percentile(luma, 90)
-            # Chỉ coi là nền nếu luma p90 thực sự sáng (> 160)
-            if p90 > 160:
-                bg_pixels = valid_pixels[luma >= p90]
-                bg_levels[i] = np.mean(bg_pixels, axis=0)
-            else:
-                tissue_only_tiles.add(i)
+            bg_levels[i] = np.percentile(valid_pixels, 95, axis=0)
 
-    if len(bg_levels) == 0:
+    if len(bg_levels) <= 1:
         return source_images
 
     all_bg = np.array(list(bg_levels.values()), dtype=np.float32)
@@ -213,25 +183,15 @@ def equalize_tile_illumination(source_images, enable_gaussian_smoothing=True):
     if np.mean(ref_bg) < 70.0:
         return source_images
 
-    # Tính gain trung bình của các tile có nền
-    valid_gains = [ref_bg / np.maximum(b, 1.0) for b in bg_levels.values()]
-    avg_safe_gain = np.median(valid_gains, axis=0) if valid_gains else np.array([1.0, 1.0, 1.0], dtype=np.float32)
-
     equalized_images = {}
     for i, img in source_images.items():
-        if i not in flat_images:
+        if i not in bg_levels or i not in flat_images:
             equalized_images[i] = img
             continue
 
-        if i in bg_levels:
-            tile_bg = bg_levels[i]
-            gains = ref_bg / np.maximum(tile_bg, 1.0)
-            gains = np.clip(gains, 0.70, 1.45)
-        elif i in tissue_only_tiles:
-            # Với tile toàn mô, áp gain trung bình an toàn từ các tile có nền để màu sắc hài hòa tự nhiên
-            gains = np.clip(avg_safe_gain, 0.85, 1.15)
-        else:
-            gains = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+        tile_bg = bg_levels[i]
+        gains = ref_bg / np.maximum(tile_bg, 1.0)
+        gains = np.clip(gains, 0.70, 1.45)
 
         flat_rgb = flat_images[i]
         adj_rgb = np.clip(flat_rgb * gains[None, None, :], 0.0, 255.0).astype(np.uint8)
@@ -840,10 +800,8 @@ class FastStreamingBlender:
 
         if self.focus_stacking:
             sharpness_map = compute_local_sharpness_map(warped_straight, kernel_size=15)
-            tile_sh = compute_tile_global_sharpness(warped_straight)
-            g_focus = max(0.01, (tile_sh / 100.0) ** 2.0)
-            edge_ramp = np.clip(dist_map / 15.0, 0.0, 1.0)
-            quality_metric = (edge_ramp * (g_focus * (sharpness_map ** 2.0) + 0.001 * dist_map)).astype(np.float32)
+            sharp_factor = 1.0 + 0.05 * np.nan_to_num(np.clip(sharpness_map, 0.0, 10.0), nan=0.0)
+            quality_metric = (dist_map * sharp_factor.astype(np.float32)).astype(np.float32)
         else:
             quality_metric = dist_map
 
@@ -928,219 +886,36 @@ class FastStreamingBlender:
                 return blended_rgb, blended_balanced, valid_mask_u8
             return blended_rgb, valid_mask_u8
 
+# Alias tương thích ngược
+MultiBandBlender = FastStreamingBlender
 
-def solve_tissue_specific_gains(images, adjusted_transforms, canvas_w, canvas_h, threshold=215):
+def compensate_overlap_exposure(source_images, transforms, motion_model='affine', channel_wise=True, threshold=215):
     """
-    Cân bằng phơi sáng chuyên biệt trên phần mô học tại các vùng giao thoa.
-    Thuật toán chuẩn tối ưu:
-    - Tìm vùng giao thoa giữa các cặp ảnh trên canvas toàn cục.
-    - Đo trung vị (np.median) trên phần mô tế bào chung (shared_tissue) cho từng kênh RGB.
-    - Giải hệ Least Squares log-linear để san phẳng chênh lệch độ sáng phơi sáng giữa các ô ảnh.
-    - Chuẩn hóa: gains = gains / np.median(gains) và clip(0.55, 1.85).
-    - Triệt tiêu hoàn toàn sự chênh lệch sáng tối giữa các ô ảnh, không còn vệt cắt ranh giới.
+    Cân bằng phơi sáng vùng giao thoa giữa các tile (Wrapper tương thích ngược).
+    Tính gain theo thuật toán mô học Kiệt và nhân gain vào từng tile.
     """
-    indices = [i for i in images if i in adjusted_transforms and images[i] is not None]
-    n_images = len(indices)
-    if n_images <= 1:
-        return {i: np.ones(3, dtype=np.float32) for i in images}
-
-    idx_to_pos = {idx: pos for pos, idx in enumerate(indices)}
-
-    # Tự động scale thích nghi để chạy cực nhanh và tiết kiệm RAM
-    max_dim = max(canvas_w, canvas_h)
-    scale = min(0.25, 2048.0 / max(max_dim, 1))
-    dw = max(1, int(canvas_w * scale))
-    dh = max(1, int(canvas_h * scale))
-    S = np.diag([scale, scale, 1.0])
-
-    warped_rgbs = {}
-    warped_tissue_masks = {}
-    warped_tile_masks = {}
-
-    for i in indices:
-        img = images[i]
-        h, w = img.shape[:2]
-        T = (S @ np.asarray(adjusted_transforms[i], dtype=np.float64))[:2]
-        rgb = img[:, :, :3] if img.ndim == 3 and img.shape[2] == 4 else img
-        warped_rgbs[i] = cv2.warpAffine(rgb, T, (dw, dh), flags=cv2.INTER_LINEAR)
-        t_mask = get_tissue_mask(rgb, threshold=threshold)
-        warped_tissue_masks[i] = cv2.warpAffine(t_mask, T, (dw, dh), flags=cv2.INTER_NEAREST)
-        warped_tile_masks[i] = cv2.warpAffine(np.ones((h, w), dtype=np.uint8), T, (dw, dh), flags=cv2.INTER_NEAREST)
-
-    rows_A = []
-    vals_b = [[] for _ in range(3)]
-    weights = []
-
-    for p_i in range(n_images):
-        i = indices[p_i]
-        for p_j in range(p_i + 1, n_images):
-            j = indices[p_j]
-            shared_tissue = (warped_tissue_masks[i] > 0) & (warped_tissue_masks[j] > 0)
-            n_tissue = np.count_nonzero(shared_tissue)
-
-            if n_tissue > 50:
-                target_mask = shared_tissue
-                w_ij = np.sqrt(float(n_tissue))
-            else:
-                shared_glass = (warped_tile_masks[i] > 0) & (warped_tile_masks[j] > 0) & (~shared_tissue)
-                n_glass = np.count_nonzero(shared_glass)
-                if n_glass > 80:
-                    target_mask = shared_glass
-                    w_ij = 0.5 * np.sqrt(float(n_glass))
-                else:
-                    continue
-
-            means_i = [float(np.median(warped_rgbs[i][target_mask, c])) for c in range(3)]
-            means_j = [float(np.median(warped_rgbs[j][target_mask, c])) for c in range(3)]
-
-            if all(m > 5.0 for m in means_i) and all(m > 5.0 for m in means_j):
-                row = np.zeros(n_images, dtype=np.float32)
-                row[p_i] = 1.0
-                row[p_j] = -1.0
-                rows_A.append(row * w_ij)
-                weights.append(w_ij)
-                for c in range(3):
-                    ratio = means_j[c] / means_i[c]
-                    vals_b[c].append(np.log(ratio) * w_ij)
-
-    if len(rows_A) == 0:
-        return {i: np.ones(3, dtype=np.float32) for i in images}
-
-    A = np.array(rows_A, dtype=np.float32)
-    constraint_row = np.ones((1, n_images), dtype=np.float32) * (np.mean(weights) * 2.0)
-    constraint_val = np.zeros(1, dtype=np.float32)
-    A_full = np.vstack([A, constraint_row])
-
-    gains_per_channel = np.ones((n_images, 3), dtype=np.float32)
-    for c in range(3):
-        b = np.array(vals_b[c], dtype=np.float32)
-        b_full = np.concatenate([b, constraint_val])
-        log_g, _, _, _ = np.linalg.lstsq(A_full, b_full, rcond=None)
-        g = np.exp(log_g)
-        med_g = np.median(g)
-        if med_g > 1e-4:
-            g = g / med_g
-        gains_per_channel[:, c] = np.clip(g, 0.55, 1.85)
-
-    result_gains = {}
-    for pos, idx in enumerate(indices):
-        result_gains[idx] = gains_per_channel[pos].copy()
-    for idx in images:
-        if idx not in result_gains:
-            result_gains[idx] = np.ones(3, dtype=np.float32)
-
-    return result_gains
-
+    if not source_images or len(source_images) <= 1:
+        return source_images
+    gains = solve_tissue_specific_gains(source_images, transforms)
+    compensated = {}
+    for idx, img in source_images.items():
+        if img is None:
+            continue
+        g = gains.get(idx, np.array([1.0, 1.0, 1.0], dtype=np.float32))
+        img_f = img.astype(np.float32) * g.reshape((1, 1, 3))
+        compensated[idx] = np.clip(img_f, 0, 255).astype(np.uint8)
+    return compensated
 
 def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, canvas_h, num_bands=5, background_mode='white'):
     """
-    Hòa trộn đa băng tần Laplacian kết hợp phân vùng Voronoi Seam Partitioning.
-    Cơ chế Sharpness-Dominant Selection:
-    - Tại mọi vùng chồng lấn, tile có độ nét cao hơn (in-focus) sẽ chiến thắng áp đảo tile mờ (out-of-focus).
-    - Tần số cao nhất (High-band - chi tiết tế bào) lấy 100% từ tile rõ nét nhất, loại bỏ hoàn toàn phần mờ nhòe.
-    - Tần số thấp (Low-band - trường sáng nền) hòa trộn mượt qua tháp Laplacian 5 tầng, xóa sạch đường nối thẳng đứng.
+    Hòa trộn multiband Voronoi (Wrapper tương thích ngược sử dụng FastStreamingBlender).
     """
-    indices = [i for i in images if i in adjusted_transforms and images[i] is not None]
-    n_images = len(indices)
-    if n_images == 0:
-        bg_col = 255 if background_mode == 'white' else 0
-        return np.full((canvas_h, canvas_w, 3), bg_col, dtype=np.uint8), np.zeros((canvas_h, canvas_w), dtype=np.uint8)
+    blender = FastStreamingBlender(canvas_w, canvas_h, background_mode=background_mode)
+    indices = sorted([i for i in images if i in adjusted_transforms and images[i] is not None])
+    for idx in indices:
+        blender.blend_tile(images[idx], adjusted_transforms[idx], idx)
+    result = blender.finalize()
+    if isinstance(result, tuple) and len(result) >= 2:
+        return result[0], result[-1]
+    return result
 
-    # 1. Cân bằng phơi sáng an toàn
-    compensated_images = {}
-    for i in indices:
-        img = images[i]
-        rgb = img[:, :, :3] if img.ndim == 3 and img.shape[2] == 4 else img
-        g = tile_gains.get(i, np.ones(3, dtype=np.float32))
-        img_f = rgb.astype(np.float32) * g[None, None, :]
-        compensated_images[i] = np.clip(img_f, 0.0, 255.0).astype(np.uint8)
-
-    # 2. Tạo mặt nạ Voronoi Seam Partitioning với Sharpness Dominance
-    tile_global_sharpness = {}
-    for i in indices:
-        tile_global_sharpness[i] = compute_tile_global_sharpness(compensated_images[i])
-
-    med_sharpness = float(np.median(list(tile_global_sharpness.values()))) if tile_global_sharpness else 1.0
-    med_sharpness = max(1.0, med_sharpness)
-
-    max_dist = np.zeros((canvas_h, canvas_w), dtype=np.float32)
-    best_tile_idx = np.full((canvas_h, canvas_w), -1, dtype=np.int16)
-    tile_rois = {}
-
-    for i in indices:
-        h, w = images[i].shape[:2]
-        H = np.asarray(adjusted_transforms[i], dtype=np.float64)
-
-        padded_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
-        padded_mask[1:-1, 1:-1] = 1
-        dist_map = cv2.distanceTransform(padded_mask, cv2.DIST_L2, 5)[1:-1, 1:-1].astype(np.float32)
-
-        corners = np.array([[0, 0, 1], [w, 0, 1], [w, h, 1], [0, h, 1]], dtype=np.float64).T
-        warped_corners = H @ corners
-        pts = warped_corners[:2, :].T
-        x0 = max(0, int(np.floor(np.min(pts[:, 0]))))
-        y0 = max(0, int(np.floor(np.min(pts[:, 1]))))
-        x1 = min(canvas_w, int(np.ceil(np.max(pts[:, 0]))))
-        y1 = min(canvas_h, int(np.ceil(np.max(pts[:, 1]))))
-        rw, rh = x1 - x0, y1 - y0
-
-        if rw <= 0 or rh <= 0:
-            continue
-
-        T_roi = np.array([[1.0, 0.0, -x0], [0.0, 1.0, -y0], [0.0, 0.0, 1.0]], dtype=np.float64)
-        H_roi = (T_roi @ H)[:2]
-
-        warped_dist = cv2.warpAffine(dist_map, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderValue=0.0)
-        warped_mask = cv2.warpAffine(np.ones((h, w), dtype=np.uint8), H_roi, (rw, rh), flags=cv2.INTER_NEAREST, borderValue=0)
-
-        # Tính độ sắc nét vi thể thực tế của tile i (Ưu tiên tuyệt đối tile rõ nét, loại bỏ tile mờ)
-        sharpness_map = compute_local_sharpness_map(compensated_images[i], kernel_size=15)
-        warped_sharpness = cv2.warpAffine(sharpness_map, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderValue=0.0)
-
-        # Hệ số ưu tiên độ nét toàn tile: tile in-focus (rõ) áp đảo hoàn toàn tile out-of-focus (mờ)
-        g_focus = max(0.01, float(tile_global_sharpness[i] / med_sharpness) ** 2.0)
-
-        # Trọng số chất lượng:
-        # edge_ramp đảm bảo mép cắt ngoài cùng 15px được làm mượt
-        edge_ramp = np.clip(warped_dist / 15.0, 0.0, 1.0)
-        # Độ nét vi thể kết hợp độ nét toàn tile: tile rõ nét áp đảo hoàn toàn tile mờ
-        tile_quality = (edge_ramp * (g_focus * (warped_sharpness ** 2.0) + 0.001 * warped_dist)).astype(np.float32)
-
-        canvas_d_sub = max_dist[y0:y1, x0:x1]
-        canvas_idx_sub = best_tile_idx[y0:y1, x0:x1]
-
-        better = (tile_quality > canvas_d_sub) & (warped_mask > 0)
-        canvas_d_sub[better] = tile_quality[better]
-        canvas_idx_sub[better] = i
-
-        tile_rois[i] = (x0, y0, x1, y1, H_roi)
-
-    # 3. Nạp vào MultiBandBlender của OpenCV
-    actual_bands = max(1, min(num_bands, 8))
-    blender = cv2.detail.MultiBandBlender(0, actual_bands)
-    blender.prepare((0, 0, canvas_w, canvas_h))
-
-    for i in indices:
-        if i not in tile_rois:
-            continue
-        img = compensated_images[i]
-        x0, y0, x1, y1, H_roi = tile_rois[i]
-        rw, rh = x1 - x0, y1 - y0
-
-        warped_img = cv2.warpAffine(img, H_roi, (rw, rh), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
-        tile_seam_mask = (best_tile_idx[y0:y1, x0:x1] == i).astype(np.uint8) * 255
-        blender.feed(warped_img.astype(np.int16), tile_seam_mask, (x0, y0))
-
-    result_img, result_mask = blender.blend(None, None)
-    final_rgb = np.clip(result_img, 0, 255).astype(np.uint8)
-
-    bg_val = 255 if background_mode == 'white' else 0
-    bg_mask = (result_mask == 0)
-    final_rgb[bg_mask] = bg_val
-
-    global_mask = (result_mask > 0).astype(np.uint8) * 255
-    return final_rgb, global_mask
-
-
-# Alias tương thích ngược
-MultiBandBlender = FastStreamingBlender
