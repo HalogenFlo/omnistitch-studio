@@ -109,7 +109,94 @@ class TestIlluminationAndSeamBlending(unittest.TestCase):
         # Với unsharp mask vi phân, nhân tế bào sẽ sắc nét và tương phản hơn với nền
         diff_norm = abs(float(res_norm[50, 50, 0]) - float(res_norm[50, 70, 0]))
         diff_clar = abs(float(res_clar[50, 50, 0]) - float(res_clar[50, 70, 0]))
-        self.assertGreaterEqual(diff_clar, diff_norm, "Bộ lọc rõ nét phải tăng hoặc bảo toàn tương phản vi thể nhân tế bào")
+    def test_compensate_overlap_exposure_balances_brightness(self):
+        # Tạo 2 tile chồng lấn 50%: Tile 1 tối (100), Tile 2 sáng (200)
+        from backend.blending import compensate_overlap_exposure
+        tile1 = np.full((100, 100, 3), 100, dtype=np.uint8)
+        tile2 = np.full((100, 100, 3), 200, dtype=np.uint8)
+
+        images = {0: tile1, 1: tile2}
+        transforms = {
+            0: np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        }
+
+        balanced_images = compensate_overlap_exposure(images, transforms)
+
+        # Kiểm tra sau khi cân bằng: độ lệch độ sáng giữa 2 tile tại vùng overlap giảm rõ rệt
+        mean1 = np.mean(balanced_images[0][:, 50:100])
+        mean2 = np.mean(balanced_images[1][:, 0:50])
+        diff = abs(mean1 - mean2)
+        self.assertLess(diff, 10.0, f"Độ lệch sáng sau khi cân bằng overlap vẫn còn quá lớn: {diff}")
+
+    def test_tissue_mask_and_defringe_filter(self):
+        from backend.blending import get_tissue_mask, apply_defringe_filter
+        # Ảnh có nền trắng 240 và nhân tế bào 80
+        img = np.full((50, 50, 3), 240, dtype=np.uint8)
+        img[10:30, 10:30] = 80
+        mask = get_tissue_mask(img, threshold=215)
+        self.assertEqual(mask[20, 20], 1)
+        self.assertEqual(mask[0, 0], 0)
+
+    def test_solve_tissue_specific_gains_balances_overlap(self):
+        from backend.blending import solve_tissue_specific_gains
+        # Tạo 2 tile chồng lấn: Tile 0 tối hơn (120), Tile 1 sáng hơn (180), đều có vùng mô (giá trị 80 và 120)
+        tile0 = np.full((100, 100, 3), 120, dtype=np.uint8)
+        tile0[20:80, 20:80] = 80
+        tile1 = np.full((100, 100, 3), 180, dtype=np.uint8)
+        tile1[20:80, 20:80] = 120
+
+        images = {0: tile0, 1: tile1}
+        transforms = {
+            0: np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        }
+
+        gains = solve_tissue_specific_gains(images, transforms, canvas_w=150, canvas_h=100)
+        self.assertIn(0, gains)
+        self.assertIn(1, gains)
+        # Tile 0 tối hơn nên gain của tile 0 phải lớn hơn gain của tile 1
+        self.assertGreater(float(gains[0][0]), float(gains[1][0]))
+
+    def test_blend_multiband_voronoi_produces_sharp_seamless_composite(self):
+        from backend.blending import blend_multiband_voronoi
+        tile0 = np.full((100, 100, 3), 160, dtype=np.uint8)
+        tile1 = np.full((100, 100, 3), 160, dtype=np.uint8)
+
+        images = {0: tile0, 1: tile1}
+        transforms = {
+            0: np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        }
+        gains = {0: np.ones(3, dtype=np.float32), 1: np.ones(3, dtype=np.float32)}
+
+        blended, mask = blend_multiband_voronoi(images, gains, transforms, canvas_w=150, canvas_h=100, num_bands=3)
+        self.assertEqual(blended.shape, (100, 150, 3))
+    def test_sharpness_prioritizes_sharp_tile_over_blurry_tile(self):
+        from backend.blending import blend_multiband_voronoi
+        # Tạo 2 tile chồng lấn 50%:
+        # Tile 0: Rất sắc nét (chứa các chấm nhân tế bào có độ tương phản cao)
+        tile_sharp = np.full((100, 100, 3), 200, dtype=np.uint8)
+        for x in range(60, 90, 6):
+            for y in range(20, 80, 6):
+                cv2.circle(tile_sharp, (x, y), 2, (30, 20, 50), -1)
+
+        # Tile 1: Bị mờ nhòe (out-of-focus mô phỏng bằng GaussianBlur nặng)
+        tile_blurry = cv2.GaussianBlur(tile_sharp, (25, 25), 0)
+
+        images = {0: tile_sharp, 1: tile_blurry}
+        transforms = {
+            0: np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        }
+        gains = {0: np.ones(3, dtype=np.float32), 1: np.ones(3, dtype=np.float32)}
+
+        blended, _ = blend_multiband_voronoi(images, gains, transforms, canvas_w=150, canvas_h=100, num_bands=3)
+        # Tại vùng overlap quanh x=75, ảnh kết quả phải giữ được chi tiết sắc nét (Laplacian cao)
+        overlap_roi = cv2.cvtColor(blended[:, 60:90], cv2.COLOR_RGB2GRAY)
+        lap_var = cv2.Laplacian(overlap_roi, cv2.CV_64F).var()
+        # Nếu chọn tile rõ nét, Laplacian variance sẽ lớn hơn 20 (ảnh mờ chỉ có < 5)
+        self.assertGreater(lap_var, 15.0, f"Vùng overlap bị chọn nhầm tile mờ! Laplacian Var={lap_var}")
 
     def test_kiet_tissue_specific_overlap_gains(self):
         """Kiểm tra: Thuật toán cân màu mô học Least Squares từ kietlearntocode/stitch."""

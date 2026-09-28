@@ -33,7 +33,7 @@ if "IMAGE_ALIGNMENT_MAX_MEMORY_MB" not in os.environ:
         os.environ["IMAGE_ALIGNMENT_MAX_MEMORY_MB"] = "2048"
 
 import cv2
-from backend.io_utils import read_image, save_tiff, create_thumbnail, get_image_metadata
+from backend.io_utils import read_image, save_tiff, create_thumbnail, get_image_metadata, extract_case_code
 from backend.pipeline import run_wsi_stitching_pipeline
 
 PORT = int(os.environ.get("PORT", 5051))
@@ -107,10 +107,14 @@ def update_stitching_progress(percent, step_name, details):
 
 def background_stitching_worker(image_paths, options):
     global stitching_task
+    folder_name = options.get("customOutputName") or "stitched_wsi"
+    case_code = extract_case_code(folder_name)
+    target_output_dir = os.path.join(OUTPUTS_DIR, case_code) if case_code and case_code != "ungrouped" else OUTPUTS_DIR
+    os.makedirs(target_output_dir, exist_ok=True)
     try:
         result = run_wsi_stitching_pipeline(
             image_paths=image_paths,
-            output_dir=OUTPUTS_DIR,
+            output_dir=target_output_dir,
             feature_method=options.get("featureMethod", "sift"),
             motion_model=options.get("motionModel", "affine"),
             background_mode=options.get("backgroundMode", "white"),
@@ -120,8 +124,12 @@ def background_stitching_worker(image_paths, options):
             progress_callback=update_stitching_progress,
             project_layers=options.get("project_layers"),
             enable_gaussian_smoothing=options.get("gaussianSmoothing", True),
-            enhance_clarity=options.get("enhanceClarity", False)
+            enhance_clarity=options.get("enhanceClarity", False),
+            compensate_exposure=options.get("compensateExposure", True),
+            blending_mode=options.get("blendingMode", "multiband")
         )
+        result["case_code"] = case_code
+        result["output_relative_folder"] = f"data/result/{case_code}" if case_code and case_code != "ungrouped" else "data/result"
         with stitching_task_lock:
             stitching_task["result"] = result
 
@@ -248,6 +256,9 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/projects/") and path.endswith("/exports"):
             proj_id = urllib.parse.unquote(path.split("/")[3])
             self.handle_manual_export(proj_id)
+        elif path.startswith("/api/projects/") and path.endswith("/sort_sharpness"):
+            proj_id = urllib.parse.unquote(path.split("/")[3])
+            self.handle_sort_project_sharpness(proj_id)
         elif path == "/api/scan_folder":
             self.handle_scan_folder()
         elif path == "/api/upload":
@@ -362,13 +373,26 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 except Exception as ex:
                     print(f"Warning: Không đọc được metadata {full_p}: {ex}")
 
+                sharpness = 0.0
+                try:
+                    # Đo độ nét vi thể của tile
+                    img_thumb = create_thumbnail(read_image(full_p), max_size=(320, 320))
+                    g_thumb = cv2.cvtColor(img_thumb, cv2.COLOR_RGB2GRAY) if img_thumb.ndim == 3 else img_thumb
+                    sharpness = float(np.var(cv2.Laplacian(g_thumb, cv2.CV_32F)))
+                except Exception:
+                    pass
+
                 image_items.append({
                     "name": f,
                     "path": rel,
                     "fullPath": full_p,
                     "width": meta.get("width", 2000),
-                    "height": meta.get("height", 1500)
+                    "height": meta.get("height", 1500),
+                    "sharpness": sharpness
                 })
+
+            # Sắp xếp theo độ nét tăng dần để tile rõ nét nhất có zIndex cao nhất (nổi trên cùng)
+            image_items.sort(key=lambda x: x.get("sharpness", 0.0))
 
             self.send_json({
                 "status": "success",
@@ -415,6 +439,15 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             fallback = os.path.join(OUTPUTS_DIR, os.path.basename(abs_path))
             abs_path = _contained_path(OUTPUTS_DIR, fallback)
 
+        # Fallback nếu file được nhóm theo case_code trong data/result/<case_code>/
+        if not os.path.exists(abs_path):
+            filename = os.path.basename(abs_path)
+            case_code = extract_case_code(os.path.splitext(filename)[0])
+            if case_code and case_code != "ungrouped":
+                candidate = os.path.join(OUTPUTS_DIR, case_code, filename)
+                if os.path.exists(candidate):
+                    abs_path = candidate
+
         if not os.path.exists(abs_path):
             import re
             cand_stripped = re.sub(r'_(?:0[1-8]_[a-zA-Z0-9_]+)(\.[a-zA-Z0-9]+)$', r'\1', abs_path)
@@ -452,6 +485,15 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         rel_path = query['path'][0]
         try:
             abs_path = self.resolve_path(rel_path)
+            if not os.path.exists(abs_path):
+                # Fallback tìm kiếm trong thư mục case_code của data/result
+                filename = os.path.basename(abs_path)
+                case_code = extract_case_code(os.path.splitext(filename)[0])
+                if case_code and case_code != "ungrouped":
+                    candidate = os.path.join(OUTPUTS_DIR, case_code, filename)
+                    if os.path.isfile(candidate):
+                        abs_path = candidate
+
             if not _is_allowed_image_path(abs_path):
                 raise ValueError("Image path outside approved data directories")
         except (ValueError, OSError):
@@ -536,7 +578,10 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             "autoCrop": data.get("autoCrop", False),
             "exportFormat": data.get("exportFormat", None),
             "customOutputName": folder_name,
-            "project_layers": project_layers if data.get("useCanvasLayout") else None
+            "project_layers": project_layers if data.get("useCanvasLayout") else None,
+            "gaussianSmoothing": data.get("gaussianSmoothing", True),
+            "enhanceClarity": data.get("enhanceClarity", False),
+            "compensateExposure": data.get("compensateExposure", True)
         }
 
         # Khởi chạy trong Background Thread
@@ -559,17 +604,39 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         # /dzi/... ví dụ: /dzi/1033-YCT26_A_dzi/1033-YCT26_A.dzi hoặc /dzi/1033-YCT26_A_dzi/1033-YCT26_A_files/10/0_0.jpg
         rel = urllib.parse.unquote(req_path[len("/dzi/"):])
 
-        # Thử 1: Trực tiếp trong OUTPUTS_DIR (data/output)
+        # Thử 1: Trực tiếp trong OUTPUTS_DIR (data/result)
         target_path = os.path.abspath(os.path.join(OUTPUTS_DIR, rel))
+        if not os.path.exists(target_path):
+            # Thử 2: Tìm trong thư mục con theo case_code (data/result/<case_code>/rel)
+            parts = rel.replace('\\', '/').split('/', 1)
+            dzi_folder = parts[0]
+            base_name = dzi_folder[:-4] if dzi_folder.endswith('_dzi') else dzi_folder
+            case_code = extract_case_code(base_name)
+            if case_code and case_code != "ungrouped":
+                candidate = os.path.abspath(os.path.join(OUTPUTS_DIR, case_code, rel))
+                if os.path.exists(candidate):
+                    target_path = candidate
+
         try:
             target_path = _contained_path(OUTPUTS_DIR, target_path)
         except ValueError:
             self.send_error(403, "DZI path outside output directory")
             return
 
-        # Thử 2: Trong data/output nếu path thiếu
+        # Thử 3: Trong data/output nếu path thiếu
         if not os.path.exists(target_path):
             alt_path = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", rel))
+            if not os.path.exists(alt_path):
+                # Thử tìm trong batch_stitched
+                parts = rel.replace('\\', '/').split('/', 1)
+                dzi_folder = parts[0]
+                base_name = dzi_folder[:-4] if dzi_folder.endswith('_dzi') else dzi_folder
+                case_code = extract_case_code(base_name)
+                for sub in ["4X", "10X", ""]:
+                    cand = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", "batch_stitched", sub, case_code, rel))
+                    if os.path.exists(cand):
+                        alt_path = cand
+                        break
             try:
                 alt_path = _contained_path(os.path.join(WORKSPACE_DIR, "data", "output"), alt_path)
             except ValueError:
@@ -934,6 +1001,42 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_json({"error": str(e)}, status=500)
 
+    def handle_sort_project_sharpness(self, proj_id):
+        """Tự động sắp xếp zIndex của các layer theo độ nét thực tế (layer nét nhất nằm trên cùng)"""
+        try:
+            from backend.project_store import load_project, save_project
+            proj = load_project(proj_id)
+            if not proj or not proj.layers:
+                self.send_json({"error": "Project not found or has no layers"}, status=404)
+                return
+
+            scored_layers = []
+            for l in proj.layers:
+                abs_p = self.resolve_path(l.sourcePath) if l.sourcePath else None
+                score = 0.0
+                if abs_p and os.path.exists(abs_p):
+                    try:
+                        thumb = create_thumbnail(read_image(abs_p), max_size=(320, 320))
+                        g = cv2.cvtColor(thumb, cv2.COLOR_RGB2GRAY) if thumb.ndim == 3 else thumb
+                        score = float(np.var(cv2.Laplacian(g, cv2.CV_32F)))
+                    except Exception:
+                        pass
+                scored_layers.append((l, score))
+
+            # Sắp xếp tăng dần theo độ nét: mờ nhất zIndex nhỏ nhất, nét nhất zIndex lớn nhất
+            scored_layers.sort(key=lambda x: x[1])
+            for new_z, (l, _) in enumerate(scored_layers):
+                l.zIndex = new_z
+
+            save_project(proj)
+            self.send_json({
+                "status": "success",
+                "message": "Đã tự động sắp xếp layer theo độ nét: ảnh nét nhất nằm trên cùng!",
+                "revision": proj.revision
+            })
+        except Exception as e:
+            self.send_json({"error": str(e)}, status=500)
+
     def handle_manual_export(self, proj_id):
         try:
             from backend.project_schemas import ProjectState
@@ -974,11 +1077,15 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             def run_export():
                 global stitching_task
                 try:
+                    folder_name = proj.folderName or proj_id
+                    case_code = extract_case_code(folder_name)
+                    target_out_dir = os.path.join(OUTPUTS_DIR, case_code) if case_code and case_code != "ungrouped" else OUTPUTS_DIR
+                    os.makedirs(target_out_dir, exist_ok=True)
                     res = export_manual_project(
                         proj,
-                        output_dir=OUTPUTS_DIR,
+                        output_dir=target_out_dir,
                         workspace_root=WORKSPACE_DIR,
-                        output_name=proj.folderName or proj_id,
+                        output_name=folder_name,
                         export_format=data.get("exportFormat") or "tif",
                         background_mode=data.get("backgroundMode") or "white",
                         progress_callback=update_progress,
@@ -1017,7 +1124,13 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             if os.path.basename(folder_name) != folder_name or export_format.lower() not in ('tif', 'tiff', 'png', 'jpg', 'jpeg', 'bmp'):
                 self.send_json({"error": "Tên output hoặc định dạng is invalid"}, status=400)
                 return
-            abs_target_dir = self.resolve_path(target_dir)
+
+            case_code = extract_case_code(folder_name)
+            abs_base_target = self.resolve_path(target_dir)
+            if case_code and case_code != "ungrouped" and not abs_base_target.replace('\\', '/').rstrip('/').endswith(case_code):
+                abs_target_dir = os.path.join(abs_base_target, case_code)
+            else:
+                abs_target_dir = abs_base_target
 
             os.makedirs(abs_target_dir, exist_ok=True)
             out_filename = f"{folder_name}.{export_format}"
@@ -1029,12 +1142,21 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 candidate = self.resolve_path(source_preview_file)
                 if os.path.exists(candidate):
                     src = candidate
+                elif case_code and case_code != "ungrouped":
+                    cand_in_case = os.path.join(OUTPUTS_DIR, case_code, os.path.basename(candidate))
+                    if os.path.exists(cand_in_case):
+                        src = cand_in_case
             else:
-                default_preview = os.path.join(WORKSPACE_DIR, "data", "result", out_filename)
-                if not os.path.exists(default_preview):
-                    default_preview = os.path.join(WORKSPACE_DIR, "data", "output", out_filename)
-                if os.path.exists(default_preview):
-                    src = os.path.abspath(default_preview)
+                if case_code and case_code != "ungrouped":
+                    case_preview = os.path.join(OUTPUTS_DIR, case_code, out_filename)
+                    if os.path.exists(case_preview):
+                        src = os.path.abspath(case_preview)
+                if not src:
+                    default_preview = os.path.join(WORKSPACE_DIR, "data", "result", out_filename)
+                    if not os.path.exists(default_preview):
+                        default_preview = os.path.join(WORKSPACE_DIR, "data", "output", out_filename)
+                    if os.path.exists(default_preview):
+                        src = os.path.abspath(default_preview)
 
             if not src or not os.path.exists(src):
                 return self.send_json({"error": "Không tìm thấy dữ liệu ảnh đã ghép. Hãy bấm Ghép Ảnh trước."}, status=400)

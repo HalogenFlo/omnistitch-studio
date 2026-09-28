@@ -141,6 +141,7 @@
                         <div class="layer-action-bar">
                             <span class="form-label"><i class="fa-solid fa-layer-group"></i> Layer Stacking Order:</span>
                             <div class="btn-group-sm">
+                                <button class="btn-sm btn-primary" id="btnAutoStackSharpness" title="Tự động xếp layer theo độ nét: ảnh nét nhất nổi lên trên cùng"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto Sharpest</button>
                                 <button class="btn-sm" id="btnLayerUp" title="Bring Forward"><i class="fa-solid fa-arrow-up"></i></button>
                                 <button class="btn-sm" id="btnLayerDown" title="Send Backward"><i class="fa-solid fa-arrow-down"></i></button>
                                 <button class="btn-sm" id="btnLayerLock" title="Lock / Unlock Layer"><i class="fa-solid fa-lock"></i></button>
@@ -279,6 +280,13 @@
                             <label class="checkbox-label" title="Khử hiện tượng tối góc vi kính (vignetting/flat-field) bằng bộ lọc Gaussian 2D với mặt nạ loại trừ mô">
                                 <input type="checkbox" id="cfgGaussianSmoothing" checked>
                                 <span>Gaussian Flat-Field Correction (Khử lệch sáng & viền mép)</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label" title="Cân bằng phơi sáng tối ưu giữa các ô ảnh dựa trên vùng chồng lấn (Khử triệt để hình sáng hình tối / ô cờ)">
+                                <input type="checkbox" id="cfgCompensateExposure" checked>
+                                <span>Overlap Exposure Balancing (Cân bằng sáng các hình)</span>
                             </label>
                         </div>
 

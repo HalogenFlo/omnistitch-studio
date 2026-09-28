@@ -78,6 +78,7 @@
         btnLayerUp: document.getElementById('btnLayerUp'),
         btnLayerDown: document.getElementById('btnLayerDown'),
         btnLayerLock: document.getElementById('btnLayerLock'),
+        btnAutoStackSharpness: document.getElementById('btnAutoStackSharpness'),
 
         // Configs
         cfgFeatureMethod: document.getElementById('cfgFeatureMethod'),
@@ -85,6 +86,7 @@
         cfgBackgroundMode: document.getElementById('cfgBackgroundMode'),
         cfgAutoCrop: document.getElementById('cfgAutoCrop'),
         cfgGaussianSmoothing: document.getElementById('cfgGaussianSmoothing'),
+        cfgCompensateExposure: document.getElementById('cfgCompensateExposure'),
         cfgEnhanceClarity: document.getElementById('cfgEnhanceClarity'),
         cfgExportFormat: document.getElementById('cfgExportFormat'),
 
@@ -123,6 +125,8 @@
         btnOsdReset: document.getElementById('btnOsdReset'),
         btnToggleGaussian: document.getElementById('btnToggleGaussian'),
         lblGaussian: document.getElementById('lblGaussian'),
+        btnToggleExposure: document.getElementById('btnToggleExposure'),
+        lblExposure: document.getElementById('lblExposure'),
         btnToggleClarify: document.getElementById('btnToggleClarify'),
         lblClarify: document.getElementById('lblClarify'),
         osdZoomIndicator: document.getElementById('osdZoomIndicator'),
@@ -927,6 +931,36 @@
             const sel = ProjectStore.getSelectedLayer();
             if (sel) ProjectStore.updateLayerProperties(sel.id, { locked: !sel.locked });
         });
+
+        if (DOM.btnAutoStackSharpness) {
+            DOM.btnAutoStackSharpness.addEventListener('click', async () => {
+                const state = ProjectStore.getState();
+                if (!state.id || !state.layers || state.layers.length === 0) {
+                    alert("Không có layer nào để sắp xếp.");
+                    return;
+                }
+                setStatus('busy', 'Đang quét độ nét vi thể và sắp xếp layer...');
+                try {
+                    const res = await fetch(`/api/projects/${encodeURIComponent(state.id)}/sort_sharpness`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ project: state })
+                    });
+                    const d = await res.json();
+                    if (d.status === 'success') {
+                        await loadProjectSession(state.id);
+                        CanvasEngine.requestRender();
+                        setStatus('ready', '✔ Đã tự động sắp xếp: Tấm rõ nét nhất đã nổi lên trên cùng!');
+                    } else {
+                        alert("Lỗi: " + (d.error || "Không thể sắp xếp"));
+                        setStatus('ready', 'Ready');
+                    }
+                } catch (err) {
+                    alert("Lỗi kết nối: " + err.message);
+                    setStatus('ready', 'Ready');
+                }
+            });
+        }
     }
 
     // ==========================================
@@ -2419,6 +2453,7 @@
             backgroundMode: DOM.cfgBackgroundMode.value,
             autoCrop: DOM.cfgAutoCrop.checked,
             gaussianSmoothing: DOM.cfgGaussianSmoothing ? DOM.cfgGaussianSmoothing.checked : true,
+            compensateExposure: DOM.cfgCompensateExposure ? DOM.cfgCompensateExposure.checked : true,
             enhanceClarity: DOM.cfgEnhanceClarity ? DOM.cfgEnhanceClarity.checked : false,
             exportFormat: DOM.cfgExportFormat.value || null,
             project: state
@@ -3377,6 +3412,14 @@
             }
         }
 
+        function updateExposureUiState(enabled) {
+            if (DOM.cfgCompensateExposure) DOM.cfgCompensateExposure.checked = enabled;
+            if (DOM.btnToggleExposure) {
+                DOM.btnToggleExposure.classList.toggle('active', enabled);
+                if (DOM.lblExposure) DOM.lblExposure.textContent = `Cân bằng sáng: ${enabled ? 'ON' : 'OFF'}`;
+            }
+        }
+
         function updateClarifyUiState(enabled) {
             if (DOM.cfgEnhanceClarity) DOM.cfgEnhanceClarity.checked = enabled;
             if (DOM.btnToggleClarify) {
@@ -3399,6 +3442,19 @@
         if (DOM.cfgGaussianSmoothing) {
             DOM.cfgGaussianSmoothing.addEventListener('change', (e) => {
                 updateGaussianUiState(e.target.checked);
+            });
+        }
+
+        if (DOM.btnToggleExposure) {
+            DOM.btnToggleExposure.addEventListener('click', () => {
+                const nextVal = !(DOM.cfgCompensateExposure ? DOM.cfgCompensateExposure.checked : true);
+                updateExposureUiState(nextVal);
+                setStatus('ready', `Đã ${nextVal ? 'bật' : 'tắt'} cân bằng sáng các hình.`);
+            });
+        }
+        if (DOM.cfgCompensateExposure) {
+            DOM.cfgCompensateExposure.addEventListener('change', (e) => {
+                updateExposureUiState(e.target.checked);
             });
         }
 

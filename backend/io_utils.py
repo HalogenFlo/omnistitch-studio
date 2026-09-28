@@ -275,3 +275,48 @@ def save_image_universal(image_data: np.ndarray, file_path: str):
             encoded = image_data
         cv2.imwrite(file_path, encoded)
     return file_path
+
+def extract_case_code(name_or_path: str) -> str:
+    """
+    Trích xuất mã ca bệnh phẩm từ tên thư mục, tên file hoặc đường dẫn.
+    Gom nhóm các file/thư mục có chung mã ca (ảnh màu và ảnh thô) vào chung một thư mục.
+    Ví dụ:
+      '1033-YCT26_A'         -> '1033-YCT26'
+      '1033-YCT26_B'         -> '1033-YCT26'
+      '1033-YCT26_THO_A'     -> '1033-YCT26'
+      '1033-YCT26_THO_B'     -> '1033-YCT26'
+      '1254-YCT26_THO_1_A'   -> '1254-YCT26'
+      '123_tho'              -> '123'
+      '123_mau'              -> '123'
+      '123 tho'              -> '123'
+      '123 mau'              -> '123'
+      '123'                  -> '123'
+    """
+    if not name_or_path:
+        return "ungrouped"
+    
+    import re
+    # Chuẩn hóa đường dẫn: lấy basename và bỏ đuôi mở rộng nếu có
+    clean_path = str(name_or_path).replace('\\', '/').strip()
+    base = os.path.splitext(os.path.basename(clean_path))[0].strip()
+    
+    if not base:
+        return "ungrouped"
+        
+    # 1. Nếu có từ THO hoặc MAU ở bất kỳ vị trí nào
+    parts = re.split(r'[_ \-]+(?:THO|MAU)(?:$|[_ \-].*)', base, flags=re.IGNORECASE)
+    if len(parts) > 1 and parts[0].strip():
+        return parts[0].strip(' _-')
+        
+    # 2. Bỏ hậu tố tiêu bản _A, _B, _C hoặc số thứ tự ở cuối
+    match_suffix = re.match(r'^(.*?)[_ \-]+(?:[A-Za-z]|[0-9]+)$', base)
+    if match_suffix and match_suffix.group(1).strip():
+        return match_suffix.group(1).strip(' _-')
+        
+    # 3. Phân tách dấu gạch dưới nếu phần sau là hậu tố ngắn (1-3 ký tự)
+    if '_' in base:
+        parts = base.rsplit('_', 1)
+        if len(parts[1]) <= 3:
+            return parts[0].strip(' _-')
+            
+    return base

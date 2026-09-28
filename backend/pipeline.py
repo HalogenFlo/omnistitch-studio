@@ -12,7 +12,14 @@ from backend.io_utils import read_image, save_tiff
 from backend.feature_engine import FeatureEngine
 from backend.matcher import FeatureMatcher
 from backend.global_stitching import GlobalStitcher
-from backend.blending import FastStreamingBlender, equalize_tile_illumination
+from backend.blending import (
+    FastStreamingBlender,
+    equalize_tile_illumination,
+    compensate_overlap_exposure,
+    solve_tissue_specific_gains,
+    blend_multiband_voronoi,
+    apply_defringe_filter
+)
 from backend.postprocessing import find_largest_inscribed_rectangle
 from backend.wsi_exporter import export_wsi_multiformat
 
