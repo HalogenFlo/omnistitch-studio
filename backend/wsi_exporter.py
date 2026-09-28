@@ -60,6 +60,10 @@ def _publication_lock(output_dir, timeout=30.0):
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
         finally:
             lock_file.close()
+            try:
+                os.remove(lock_path)
+            except Exception:
+                pass
 
 def export_wsi_image(file_path, image_data, target_format=None, quality=95):
     """
@@ -408,9 +412,10 @@ def generate_dzi_pyramid(image_data, output_dzi_path, tile_size=254, tile_overla
 
     return output_dzi_path
 
-def export_wsi_multiformat(image_data, output_dir, folder_name="stitched_wsi", target_ext="tif", tile_size=254, valid_mask=None, metadata_dict=None):
+def export_wsi_multiformat(image_data, output_dir, folder_name="stitched_wsi", target_ext="tif", tile_size=254, valid_mask=None, metadata_dict=None, export_dzi=True, export_mask=True):
     """
     Xuất ảnh WSI theo định dạng và tự động sinh DeepZoom Tiles Pyramid, Companion Training Mask và Metadata JSON.
+    Có thể tắt export_dzi và export_mask để chỉ lưu duy nhất file ảnh (ví dụ .tif) mà không tạo thêm thư mục phụ.
     """
     os.makedirs(output_dir, exist_ok=True)
     if not folder_name or os.path.basename(folder_name) != folder_name:
@@ -427,17 +432,17 @@ def export_wsi_multiformat(image_data, output_dir, folder_name="stitched_wsi", t
 
     file_name = f"{folder_name}.{target_ext}"
     output_path = os.path.join(output_dir, file_name)
-    mask_path = os.path.join(output_dir, f"{folder_name}_valid_mask.png") if valid_mask is not None else None
+    mask_path = os.path.join(output_dir, f"{folder_name}_valid_mask.png") if (valid_mask is not None and export_mask) else None
     meta_path = os.path.join(output_dir, f"{folder_name}_metadata.json") if metadata_dict is not None else None
-    dzi_dir = os.path.join(output_dir, f"{folder_name}_dzi")
-    dzi_path = os.path.join(dzi_dir, f"{folder_name}.dzi")
+    dzi_dir = os.path.join(output_dir, f"{folder_name}_dzi") if export_dzi else None
+    dzi_path = os.path.join(dzi_dir, f"{folder_name}.dzi") if export_dzi else None
 
     stage_root = tempfile.mkdtemp(prefix=f".{folder_name}.publish.", dir=output_dir)
     staged_output = os.path.join(stage_root, file_name)
     staged_mask = os.path.join(stage_root, os.path.basename(mask_path)) if mask_path else None
     staged_meta = os.path.join(stage_root, os.path.basename(meta_path)) if meta_path else None
-    staged_dzi_dir = os.path.join(stage_root, f"{folder_name}_dzi")
-    staged_dzi_path = os.path.join(staged_dzi_dir, f"{folder_name}.dzi")
+    staged_dzi_dir = os.path.join(stage_root, f"{folder_name}_dzi") if export_dzi else None
+    staged_dzi_path = os.path.join(staged_dzi_dir, f"{folder_name}.dzi") if export_dzi else None
     try:
         export_wsi_image(staged_output, image_data, target_format=target_ext)
         if staged_mask and not cv2.imwrite(staged_mask, valid_mask, [cv2.IMWRITE_PNG_COMPRESSION, 4]):
@@ -447,16 +452,18 @@ def export_wsi_multiformat(image_data, output_dir, folder_name="stitched_wsi", t
                 json.dump(metadata_dict, f, ensure_ascii=False, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
-        os.makedirs(staged_dzi_dir, exist_ok=True)
-        tile_fmt = 'png' if image_data.ndim == 3 and image_data.shape[2] == 4 else 'jpg'
-        generate_dzi_pyramid(image_data, staged_dzi_path, tile_size=tile_size, tile_format=tile_fmt)
+        if export_dzi:
+            os.makedirs(staged_dzi_dir, exist_ok=True)
+            tile_fmt = 'png' if image_data.ndim == 3 and image_data.shape[2] == 4 else 'jpg'
+            generate_dzi_pyramid(image_data, staged_dzi_path, tile_size=tile_size, tile_format=tile_fmt)
 
         publications = [(staged_output, output_path)]
         if staged_mask:
             publications.append((staged_mask, mask_path))
         if staged_meta:
             publications.append((staged_meta, meta_path))
-        publications.append((staged_dzi_dir, dzi_dir))
+        if export_dzi and staged_dzi_dir:
+            publications.append((staged_dzi_dir, dzi_dir))
         _publish_staged_artifacts(stage_root, publications)
     finally:
         shutil.rmtree(stage_root, ignore_errors=True)

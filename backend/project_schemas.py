@@ -497,6 +497,137 @@ class HistoryCommand:
         )
 
 
+
+VARIANTS_SPEC = [
+    {
+        "id": "original",
+        "group": "original",
+        "label": "Gốc",
+        "suffix": "01_goc",
+        "description": "Panorama gốc, không hậu xử lý",
+        "postprocess": {"gaussian": False, "balanced": False, "clarity": False}
+    },
+    {
+        "id": "original_balanced",
+        "group": "original",
+        "label": "Gốc+Cân màu",
+        "suffix": "02_goc_can_sang",
+        "description": "Cân màu/phơi sáng nhẹ sau ghép",
+        "postprocess": {"gaussian": False, "balanced": True, "clarity": False}
+    },
+    {
+        "id": "original_clarity",
+        "group": "original",
+        "label": "Gốc+Nét",
+        "suffix": "03_goc_sac_net",
+        "description": "Cellular Clarity",
+        "postprocess": {"gaussian": False, "balanced": False, "clarity": True}
+    },
+    {
+        "id": "original_full",
+        "group": "original",
+        "label": "Gốc+Full",
+        "suffix": "04_goc_can_sang_net",
+        "description": "Cân màu và Cellular Clarity",
+        "postprocess": {"gaussian": False, "balanced": True, "clarity": True}
+    },
+    {
+        "id": "gaussian",
+        "group": "gaussian",
+        "label": "Gaussian",
+        "suffix": "05_gaussian",
+        "description": "Cân trường sáng Gaussian sau ghép",
+        "postprocess": {"gaussian": True, "balanced": False, "clarity": False}
+    },
+    {
+        "id": "gaussian_balanced",
+        "group": "gaussian",
+        "label": "Gaussian+Cân màu",
+        "suffix": "06_gaussian_can_sang",
+        "description": "Gaussian và cân màu",
+        "postprocess": {"gaussian": True, "balanced": True, "clarity": False}
+    },
+    {
+        "id": "gaussian_clarity",
+        "group": "gaussian",
+        "label": "Gaussian+Nét",
+        "suffix": "07_gaussian_sac_net",
+        "description": "Gaussian và Cellular Clarity",
+        "postprocess": {"gaussian": True, "balanced": False, "clarity": True}
+    },
+    {
+        "id": "gaussian_full",
+        "group": "gaussian",
+        "label": "Gaussian+Full",
+        "suffix": "08_gaussian_full",
+        "description": "Gaussian, cân màu và Cellular Clarity",
+        "postprocess": {"gaussian": True, "balanced": True, "clarity": True}
+    }
+]
+
+ALL_VARIANT_IDS = [spec["id"] for spec in VARIANTS_SPEC]
+
+
+class VariantWorkspace:
+    def __init__(
+        self,
+        focusRegions: Optional[List[FocusRegion]] = None,
+        maskRegions: Optional[List[MaskRegion]] = None,
+        cropRegion: Optional[CropRegion] = None,
+        cropDraft: Optional[CropRegion] = None,
+        cropSettings: Optional[CropSettings] = None,
+        regionGroups: Optional[List[RegionGroup]] = None,
+        historyJournal: Optional[List[HistoryCommand]] = None,
+        historyCursor: int = 0
+    ):
+        self.focusRegions = focusRegions if focusRegions is not None else []
+        self.maskRegions = maskRegions if maskRegions is not None else []
+        self.cropRegion = cropRegion
+        self.cropDraft = cropDraft
+        self.cropSettings = cropSettings if cropSettings is not None else CropSettings()
+        self.regionGroups = regionGroups if regionGroups is not None else []
+        journal = historyJournal if historyJournal is not None else []
+        self.historyJournal = journal[-MAX_HISTORY_COMMANDS:]
+        dropped = max(0, len(journal) - len(self.historyJournal))
+        self.historyCursor = max(0, min(int(historyCursor) - dropped, len(self.historyJournal)))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "focusRegions": [fr.to_dict() for fr in self.focusRegions],
+            "maskRegions": [mr.to_dict() for mr in self.maskRegions],
+            "cropRegion": self.cropRegion.to_dict() if self.cropRegion else None,
+            "cropDraft": self.cropDraft.to_dict() if self.cropDraft else None,
+            "cropSettings": self.cropSettings.to_dict(),
+            "regionGroups": [rg.to_dict() for rg in self.regionGroups],
+            "historyJournal": [hc.to_dict() for hc in self.historyJournal],
+            "historyCursor": self.historyCursor
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'VariantWorkspace':
+        if not isinstance(data, dict):
+            return cls()
+        focus_regions = [FocusRegion.from_dict(fr) for fr in data.get("focusRegions", [])]
+        raw_masks = data.get("maskRegions", data.get("exclusionStrokes", []))
+        mask_regions = [MaskRegion.from_dict(m) for m in raw_masks]
+        raw_crop = data.get("cropRegion", data.get("keepRegion"))
+        crop_region = CropRegion.from_dict(raw_crop) if raw_crop else None
+        crop_draft = CropRegion.from_dict(data["cropDraft"]) if data.get("cropDraft") else None
+        crop_settings = CropSettings.from_dict(data.get("cropSettings", {})) if "cropSettings" in data else CropSettings()
+        region_groups = [RegionGroup.from_dict(rg) for rg in data.get("regionGroups", [])]
+        history_journal = [HistoryCommand.from_dict(hc) for hc in data.get("historyJournal", [])]
+        return cls(
+            focusRegions=focus_regions,
+            maskRegions=mask_regions,
+            cropRegion=crop_region,
+            cropDraft=crop_draft,
+            cropSettings=crop_settings,
+            regionGroups=region_groups,
+            historyJournal=history_journal,
+            historyCursor=int(data.get("historyCursor", 0))
+        )
+
+
 class ProjectState:
     def __init__(
         self,
@@ -511,6 +642,8 @@ class ProjectState:
         selection: Optional[List[str]] = None,
         folderName: str = "",
         updatedAt: str = "",
+        activeVariantId: str = "original",
+        variantWorkspaces: Optional[Dict[str, VariantWorkspace]] = None,
         focusRegions: Optional[List[FocusRegion]] = None,
         maskRegions: Optional[List[MaskRegion]] = None,
         cropRegion: Optional[CropRegion] = None,
@@ -534,41 +667,134 @@ class ProjectState:
         self.selection = selection if selection is not None else []
         self.folderName = folderName
         self.updatedAt = updatedAt
-        self.focusRegions = focusRegions if focusRegions is not None else []
+        self.activeVariantId = activeVariantId if activeVariantId in ALL_VARIANT_IDS else "original"
 
-        # MaskRegions with migration from legacy exclusionStrokes
-        if maskRegions is not None:
-            self.maskRegions = maskRegions
-        elif exclusionStrokes is not None:
-            self.maskRegions = [MaskRegion.from_dict(es) if isinstance(es, dict) else es for es in exclusionStrokes]
+        # Khởi tạo variantWorkspaces đủ 8 variant
+        self.variantWorkspaces: Dict[str, VariantWorkspace] = {}
+        if variantWorkspaces:
+            for vid in ALL_VARIANT_IDS:
+                if vid in variantWorkspaces:
+                    ws = variantWorkspaces[vid]
+                    self.variantWorkspaces[vid] = ws if isinstance(ws, VariantWorkspace) else VariantWorkspace.from_dict(ws)
+                else:
+                    self.variantWorkspaces[vid] = VariantWorkspace()
         else:
-            self.maskRegions = []
+            for vid in ALL_VARIANT_IDS:
+                self.variantWorkspaces[vid] = VariantWorkspace()
 
-        # CropRegion with migration from legacy keepRegion
-        if cropRegion is not None:
-            self.cropRegion = cropRegion
-        elif keepRegion is not None:
-            self.cropRegion = CropRegion.from_dict(keepRegion) if isinstance(keepRegion, dict) else keepRegion
-        else:
-            self.cropRegion = None
+        # Migrate root-level parameters vào active workspace nếu được cung cấp
+        init_masks = maskRegions
+        if init_masks is None and exclusionStrokes is not None:
+            init_masks = [MaskRegion.from_dict(es) if isinstance(es, dict) else es for es in exclusionStrokes]
 
-        self.cropDraft = cropDraft
-        self.cropSettings = cropSettings if cropSettings is not None else CropSettings()
-        self.regionGroups = regionGroups if regionGroups is not None else []
-        journal = historyJournal if historyJournal is not None else []
-        self.historyJournal = journal[-MAX_HISTORY_COMMANDS:]
-        dropped = max(0, len(journal) - len(self.historyJournal))
-        self.historyCursor = max(0, min(int(historyCursor) - dropped, len(self.historyJournal)))
+        init_crop = cropRegion
+        if init_crop is None and keepRegion is not None:
+            init_crop = CropRegion.from_dict(keepRegion) if isinstance(keepRegion, dict) else keepRegion
+
+        active_ws = self.variantWorkspaces[self.activeVariantId]
+        if focusRegions is not None:
+            active_ws.focusRegions = focusRegions
+        if init_masks is not None:
+            active_ws.maskRegions = init_masks
+        if init_crop is not None:
+            active_ws.cropRegion = init_crop
+        if cropDraft is not None:
+            active_ws.cropDraft = cropDraft
+        if cropSettings is not None:
+            active_ws.cropSettings = cropSettings
+        if regionGroups is not None:
+            active_ws.regionGroups = regionGroups
+        if historyJournal is not None:
+            active_ws.historyJournal = historyJournal[-MAX_HISTORY_COMMANDS:]
+            dropped = max(0, len(historyJournal) - len(active_ws.historyJournal))
+            active_ws.historyCursor = max(0, min(int(historyCursor) - dropped, len(active_ws.historyJournal)))
+
+    def get_variant_workspace(self, variant_id: str) -> VariantWorkspace:
+        if variant_id not in self.variantWorkspaces:
+            self.variantWorkspaces[variant_id] = VariantWorkspace()
+        return self.variantWorkspaces[variant_id]
+
+    def switch_variant(self, variant_id: str):
+        if variant_id in ALL_VARIANT_IDS:
+            self.activeVariantId = variant_id
+        if self.activeVariantId not in self.variantWorkspaces:
+            self.variantWorkspaces[self.activeVariantId] = VariantWorkspace()
+
+    # Facade properties trỏ tới workspace của activeVariantId
+    @property
+    def focusRegions(self) -> List[FocusRegion]:
+        return self.get_variant_workspace(self.activeVariantId).focusRegions
+
+    @focusRegions.setter
+    def focusRegions(self, value: List[FocusRegion]):
+        self.get_variant_workspace(self.activeVariantId).focusRegions = value
+
+    @property
+    def maskRegions(self) -> List[MaskRegion]:
+        return self.get_variant_workspace(self.activeVariantId).maskRegions
+
+    @maskRegions.setter
+    def maskRegions(self, value: List[MaskRegion]):
+        self.get_variant_workspace(self.activeVariantId).maskRegions = value
 
     @property
     def exclusionStrokes(self) -> List[MaskRegion]:
         return self.maskRegions
 
     @property
+    def cropRegion(self) -> Optional[CropRegion]:
+        return self.get_variant_workspace(self.activeVariantId).cropRegion
+
+    @cropRegion.setter
+    def cropRegion(self, value: Optional[CropRegion]):
+        self.get_variant_workspace(self.activeVariantId).cropRegion = value
+
+    @property
     def keepRegion(self) -> Optional[CropRegion]:
         return self.cropRegion
 
+    @property
+    def cropDraft(self) -> Optional[CropRegion]:
+        return self.get_variant_workspace(self.activeVariantId).cropDraft
+
+    @cropDraft.setter
+    def cropDraft(self, value: Optional[CropRegion]):
+        self.get_variant_workspace(self.activeVariantId).cropDraft = value
+
+    @property
+    def cropSettings(self) -> CropSettings:
+        return self.get_variant_workspace(self.activeVariantId).cropSettings
+
+    @cropSettings.setter
+    def cropSettings(self, value: CropSettings):
+        self.get_variant_workspace(self.activeVariantId).cropSettings = value
+
+    @property
+    def regionGroups(self) -> List[RegionGroup]:
+        return self.get_variant_workspace(self.activeVariantId).regionGroups
+
+    @regionGroups.setter
+    def regionGroups(self, value: List[RegionGroup]):
+        self.get_variant_workspace(self.activeVariantId).regionGroups = value
+
+    @property
+    def historyJournal(self) -> List[HistoryCommand]:
+        return self.get_variant_workspace(self.activeVariantId).historyJournal
+
+    @historyJournal.setter
+    def historyJournal(self, value: List[HistoryCommand]):
+        self.get_variant_workspace(self.activeVariantId).historyJournal = value
+
+    @property
+    def historyCursor(self) -> int:
+        return self.get_variant_workspace(self.activeVariantId).historyCursor
+
+    @historyCursor.setter
+    def historyCursor(self, value: int):
+        self.get_variant_workspace(self.activeVariantId).historyCursor = value
+
     def to_dict(self) -> Dict[str, Any]:
+        active_ws = self.get_variant_workspace(self.activeVariantId)
         return {
             "id": self.id,
             "version": self.version,
@@ -581,16 +807,19 @@ class ProjectState:
             "selection": self.selection,
             "folderName": self.folderName,
             "updatedAt": self.updatedAt,
-            "focusRegions": [fr.to_dict() for fr in self.focusRegions],
-            "maskRegions": [mr.to_dict() for mr in self.maskRegions],
-            "exclusionStrokes": [mr.to_dict() for mr in self.maskRegions],
-            "cropRegion": self.cropRegion.to_dict() if self.cropRegion else None,
-            "keepRegion": self.cropRegion.to_dict() if self.cropRegion else None,
-            "cropDraft": self.cropDraft.to_dict() if self.cropDraft else None,
-            "cropSettings": self.cropSettings.to_dict(),
-            "regionGroups": [rg.to_dict() for rg in self.regionGroups],
-            "historyJournal": [hc.to_dict() for hc in self.historyJournal],
-            "historyCursor": self.historyCursor
+            "activeVariantId": self.activeVariantId,
+            "variantWorkspaces": {vid: ws.to_dict() for vid, ws in self.variantWorkspaces.items()},
+            # Backward-compat facade at root level
+            "focusRegions": [fr.to_dict() for fr in active_ws.focusRegions],
+            "maskRegions": [mr.to_dict() for mr in active_ws.maskRegions],
+            "exclusionStrokes": [mr.to_dict() for mr in active_ws.maskRegions],
+            "cropRegion": active_ws.cropRegion.to_dict() if active_ws.cropRegion else None,
+            "keepRegion": active_ws.cropRegion.to_dict() if active_ws.cropRegion else None,
+            "cropDraft": active_ws.cropDraft.to_dict() if active_ws.cropDraft else None,
+            "cropSettings": active_ws.cropSettings.to_dict(),
+            "regionGroups": [rg.to_dict() for rg in active_ws.regionGroups],
+            "historyJournal": [hc.to_dict() for hc in active_ws.historyJournal],
+            "historyCursor": active_ws.historyCursor
         }
 
     def to_json(self, indent: int = 2) -> str:
@@ -604,18 +833,42 @@ class ProjectState:
         if version < 1 or version > CURRENT_PROJECT_VERSION:
             raise ValueError(f"Project version không được hỗ trợ: {version}")
         layers = [ProjectLayer.from_dict(l) for l in data.get("layers", [])]
-        focus_regions = [FocusRegion.from_dict(fr) for fr in data.get("focusRegions", [])]
 
-        raw_masks = data.get("maskRegions", data.get("exclusionStrokes", []))
-        mask_regions = [MaskRegion.from_dict(m) for m in raw_masks]
+        active_variant_id = data.get("activeVariantId", "original")
+        if active_variant_id not in ALL_VARIANT_IDS:
+            active_variant_id = "original"
 
-        raw_crop = data.get("cropRegion", data.get("keepRegion"))
-        crop_region = CropRegion.from_dict(raw_crop) if raw_crop else None
-        crop_draft = CropRegion.from_dict(data["cropDraft"]) if data.get("cropDraft") else None
-
-        crop_settings = CropSettings.from_dict(data.get("cropSettings", {})) if "cropSettings" in data else CropSettings()
-        region_groups = [RegionGroup.from_dict(rg) for rg in data.get("regionGroups", [])]
-        history_journal = [HistoryCommand.from_dict(hc) for hc in data.get("historyJournal", [])]
+        variant_workspaces = {}
+        raw_workspaces = data.get("variantWorkspaces")
+        if isinstance(raw_workspaces, dict):
+            for vid in ALL_VARIANT_IDS:
+                if vid in raw_workspaces:
+                    variant_workspaces[vid] = VariantWorkspace.from_dict(raw_workspaces[vid])
+                else:
+                    variant_workspaces[vid] = VariantWorkspace()
+        else:
+            # Backward compatibility migration from root fields to 'original'
+            focus_regions = [FocusRegion.from_dict(fr) for fr in data.get("focusRegions", [])]
+            raw_masks = data.get("maskRegions", data.get("exclusionStrokes", []))
+            mask_regions = [MaskRegion.from_dict(m) for m in raw_masks]
+            raw_crop = data.get("cropRegion", data.get("keepRegion"))
+            crop_region = CropRegion.from_dict(raw_crop) if raw_crop else None
+            crop_draft = CropRegion.from_dict(data["cropDraft"]) if data.get("cropDraft") else None
+            crop_settings = CropSettings.from_dict(data.get("cropSettings", {})) if "cropSettings" in data else CropSettings()
+            region_groups = [RegionGroup.from_dict(rg) for rg in data.get("regionGroups", [])]
+            history_journal = [HistoryCommand.from_dict(hc) for hc in data.get("historyJournal", [])]
+            orig_ws = VariantWorkspace(
+                focusRegions=focus_regions,
+                maskRegions=mask_regions,
+                cropRegion=crop_region,
+                cropDraft=crop_draft,
+                cropSettings=crop_settings,
+                regionGroups=region_groups,
+                historyJournal=history_journal,
+                historyCursor=int(data.get("historyCursor", 0))
+            )
+            for vid in ALL_VARIANT_IDS:
+                variant_workspaces[vid] = orig_ws if vid == "original" else VariantWorkspace()
 
         project = cls(
             id=data.get("id", ""),
@@ -629,34 +882,34 @@ class ProjectState:
             selection=data.get("selection", []),
             folderName=data.get("folderName", ""),
             updatedAt=data.get("updatedAt", ""),
-            focusRegions=focus_regions,
-            maskRegions=mask_regions,
-            cropRegion=crop_region,
-            cropDraft=crop_draft,
-            cropSettings=crop_settings,
-            regionGroups=region_groups,
-            historyJournal=history_journal,
-            historyCursor=int(data.get("historyCursor", 0))
+            activeVariantId=active_variant_id,
+            variantWorkspaces=variant_workspaces
         )
         if not project.id:
             raise ValueError("Project id không được để trống")
         if project.revision < 0 or project.geometryRevision < 1:
             raise ValueError("Revision is invalid")
+
         ids = [layer.id for layer in project.layers]
         if any(not value for value in ids) or len(ids) != len(set(ids)):
             raise ValueError("Layer id phải khác rỗng và duy nhất")
-        region_ids = [region.id for region in project.focusRegions + project.maskRegions]
-        if project.cropRegion:
-            region_ids.append(project.cropRegion.id)
-        if any(not value for value in region_ids) or len(region_ids) != len(set(region_ids)):
-            raise ValueError("Region id phải khác rỗng và duy nhất")
         layer_ids = set(ids)
-        for region in project.focusRegions:
-            if region.selectedLayerId is not None and region.selectedLayerId not in layer_ids:
-                raise ValueError(f"FocusRegion tham chiếu layer không tồn tại: {region.selectedLayerId}")
+
+        # Validate từng workspace
+        for vid, ws in project.variantWorkspaces.items():
+            region_ids = [region.id for region in ws.focusRegions + ws.maskRegions]
+            if ws.cropRegion:
+                region_ids.append(ws.cropRegion.id)
+            if any(not value for value in region_ids) or len(region_ids) != len(set(region_ids)):
+                raise ValueError(f"Region id trong workspace '{vid}' phải khác rỗng và duy nhất")
+            for region in ws.focusRegions:
+                if region.selectedLayerId is not None and region.selectedLayerId not in layer_ids:
+                    raise ValueError(f"FocusRegion trong workspace '{vid}' tham chiếu layer không tồn tại: {region.selectedLayerId}")
+
         return project
 
     @classmethod
     def from_json(cls, json_str: str) -> 'ProjectState':
         data = json.loads(json_str)
         return cls.from_dict(data)
+

@@ -240,7 +240,13 @@ def inspect_patches_at_world_region(
         # Tính độ sắc nét Laplacian chỉ trong score_mask
         gray = cv2.cvtColor(patch, cv2.COLOR_RGB2GRAY) if patch.ndim == 3 else patch
         lap = cv2.Laplacian(gray, cv2.CV_64F)
-        score_weights = (final_valid_mask.astype(np.float64) / 255.0) * (eroded_region_mask > 0)
+        # Loại biên coverage của ảnh nguồn khỏi phép đo. Nếu không, ranh giới
+        # giữa ảnh thật và padding có Laplacian rất lớn và một lát chỉ phủ một
+        # phần vùng chọn có thể bị xếp hạng cao giả tạo.
+        valid_binary = (final_valid_mask >= 250).astype(np.uint8)
+        source_edge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        eroded_source_mask = cv2.erode(valid_binary, source_edge_kernel, iterations=1)
+        score_weights = eroded_source_mask.astype(np.float64) * (eroded_region_mask > 0)
         effective_pixels = float(np.sum(score_weights))
         sufficient_pixels = effective_pixels >= _MIN_SCORE_PIXELS
         if sufficient_pixels:
@@ -263,6 +269,7 @@ def inspect_patches_at_world_region(
             continue
         data_url = "data:image/png;base64," + base64.b64encode(encoded_buf).decode('utf-8')
 
+        selection_score = (sharpness_score * (valid_coverage ** 3.0)) if sharpness_score is not None else 0.0
         patches.append({
             "layerId": layer.id,
             "sourceId": layer.sourceId,
@@ -270,6 +277,7 @@ def inspect_patches_at_world_region(
             "imageDataUrl": data_url,
             # Keep the frontend's numeric display contract while status controls ranking.
             "sharpness": round(sharpness_score, 2) if sharpness_score is not None else 0.0,
+            "selectionScore": round(float(selection_score), 2),
             "scoreStatus": "ok" if sufficient_pixels else "insufficient_pixels",
             "validPixelCount": int(valid_pixel_count),
             "validCoverage": round(float(valid_coverage), 3),
@@ -278,7 +286,7 @@ def inspect_patches_at_world_region(
             "zIndex": layer.zIndex
         })
 
-    patches.sort(key=lambda p: (p["scoreStatus"] == "ok", p["sharpness"]), reverse=True)
+    patches.sort(key=lambda p: (p["scoreStatus"] == "ok", p["selectionScore"]), reverse=True)
     sharpest_layer_id = next((p["layerId"] for p in patches if p["scoreStatus"] == "ok"), None)
 
     return {

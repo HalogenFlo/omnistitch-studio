@@ -1048,6 +1048,144 @@ input[type=range]::-webkit-slider-thumb {
     text-align: right;
 }
 
+/* ========================================================
+   8-Variant Tabs Bar (Nhóm Gốc & Nhóm Gaussian)
+   ======================================================== */
+.variant-tabs-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 1rem;
+    background: rgba(12, 17, 30, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+    overflow-x: auto;
+    z-index: 30;
+    scrollbar-width: thin;
+}
+
+.variant-group {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+
+.variant-group-tag {
+    font-size: 0.65rem;
+    font-family: var(--font-title);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.45rem;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    white-space: nowrap;
+    text-transform: uppercase;
+}
+
+.variant-group-original .variant-group-tag {
+    background: rgba(99, 102, 241, 0.15);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.variant-group-gaussian .variant-group-tag {
+    background: rgba(234, 179, 8, 0.15);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.variant-group-divider {
+    width: 1px;
+    height: 22px;
+    background: rgba(255, 255, 255, 0.12);
+    margin: 0 0.2rem;
+    flex-shrink: 0;
+}
+
+.variant-tab-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.variant-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.28rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 500;
+    font-family: var(--font-title);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(30, 41, 59, 0.55);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.variant-tab-btn:hover {
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(30, 41, 59, 0.85);
+    transform: translateY(-1px);
+}
+
+.variant-group-original .variant-tab-btn.active {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(79, 70, 229, 0.55));
+    border-color: #818cf8;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.35);
+    font-weight: 600;
+}
+
+.variant-group-gaussian .variant-tab-btn.active {
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.35), rgba(217, 119, 6, 0.5));
+    border-color: #facc15;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(234, 179, 8, 0.35);
+    font-weight: 600;
+}
+
+.vtab-badge {
+    display: inline-block;
+    font-size: 0.64rem;
+    font-family: var(--font-mono);
+    padding: 0.08rem 0.35rem;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    color: #94a3b8;
+    margin-left: 0.15rem;
+    line-height: 1.2;
+}
+
+.vtab-badge:empty {
+    display: none;
+}
+
+.variant-tab-btn.active .vtab-badge {
+    background: rgba(0, 0, 0, 0.6);
+    color: #f8fafc;
+}
+
+.btn-outline-cyan {
+    background: transparent;
+    border: 1px solid rgba(6, 182, 212, 0.5);
+    color: #22d3ee;
+}
+
+.btn-outline-cyan:hover:not(:disabled) {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: #06b6d4;
+    color: #67e8f9;
+}
+
 .view-content {
     display: none;
     flex: 1 1 0;

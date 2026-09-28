@@ -43,13 +43,20 @@ The operation runs in the background. Poll `GET /api/stitch/status` for progress
 
 `GET /api/projects/{id}` loads project state. `PUT /api/projects/{id}` validates and saves project state using revision-aware persistence. A stale revision returns a conflict response rather than overwriting newer state.
 
-`POST /api/projects/{id}/inspect` accepts a rectangle or polygon in world coordinates and returns overlapping source candidates with coverage and clarity scores.
+`POST /api/projects/{id}/inspect` accepts a rectangle or polygon in world coordinates and returns overlapping source candidates with coverage and clarity scores (scored against original source tiles).
 
-`POST /api/projects/{id}/exports` exports the current project using the requested `exportFormat` and `backgroundMode`.
+`POST /api/projects/{id}/exports` exports project variants. Request body parameters:
+- `exportFormat`: `'tif'` | `'png'` | `'jpg'`
+- `backgroundMode`: `'white'` | `'transparent'` | `'black'`
+- `variantId`: ID of the single variant to render (e.g. `'original'`, `'gaussian_full'`).
+- `exportAll`: `true` to sequentially render all 8 variant workspaces into 8 distinct files and DZI pyramids.
+- `customOutputName`: Base file name prefix for generated outputs.
+
+Returns `{ "status": "started" }` and starts background processing. Poll `GET /api/stitch/status` for progress and logs.
 
 ## Limits and Errors
 
-- JSON requests are limited to 4 MiB.
+- JSON requests are limited to 64 MiB.
 - Upload requests are limited to 256 MiB and decoded upload content to 128 MiB.
 - Invalid input returns `400`, disallowed paths return `403`, oversized requests return `413`, and stale project revisions return `409`.
 - Error responses are JSON where handled by an API endpoint; unknown routes use an HTTP error response.

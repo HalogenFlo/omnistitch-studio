@@ -319,19 +319,28 @@ def render_manual_wsi_composite(
     project: ProjectState,
     workspace_root: str,
     background_mode: str = "transparent",
-    progress_callback: Optional[Callable[[int, str], None]] = None
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    variant_id: Optional[str] = None
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
     """
     Render toàn bộ các layer theo thứ tự zIndex từ ảnh gốc full-res.
-    Áp dụng:
+    Áp dụng theo đúng thứ tự:
       1. Layer Warp & Color Adjustments.
-      2. Focus Regions (Polygon, Lasso, Rectangle) với Inward-only feathering.
-      3. Exclusion / Restore Strokes (Cọ xóa / khôi phục).
-      4. KeepRegion & CropSettings (Cắt gọn bounding box).
-      5. Background transparent (RGBA) và Companion Training Mask.
+      2. Focus Regions của workspace được chọn.
+      3. Áp dụng hậu xử lý của biến thể (Gaussian / cân màu / Cellular Clarity).
+      4. MaskRegions (Cọ xóa tàng hình / khôi phục) riêng của workspace.
+      5. CropRegion & CropSettings riêng của workspace.
+      6. Background và Companion Training Mask.
     """
+    target_vid = variant_id or project.activeVariantId or "original"
+    project.switch_variant(target_vid)
+    ws = project.get_variant_workspace(target_vid)
+
+    from backend.project_schemas import VARIANTS_SPEC
+    spec = next((s for s in VARIANTS_SPEC if s["id"] == target_vid), None)
+
     if progress_callback:
-        progress_callback(10, "Đang tính toán bounding box canvas...")
+        progress_callback(10, f"Đang tính toán bounding box canvas cho biến thể {target_vid}...")
 
     min_x, min_y, max_x, max_y = calculate_project_bounding_box(project)
     canvas_w = max(1, max_x - min_x)
@@ -395,12 +404,13 @@ def render_manual_wsi_composite(
         layer_alpha = source_alpha * layer.opacity
         source_premul = (img_f / 255.0) * source_alpha[:, :, None] * layer.opacity
         if is_perspective:
-            warped_img = cv2.warpPerspective(source_premul, M_canvas, (canvas_w, canvas_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
+            warped_img = cv2.warpPerspective(source_premul, M_canvas, (canvas_w, canvas_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
             warped_mask = cv2.warpPerspective(layer_alpha, M_canvas, (canvas_w, canvas_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
         else:
             M_affine = M_canvas[:2, :]
-            warped_img = cv2.warpAffine(source_premul, M_affine, (canvas_w, canvas_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
+            warped_img = cv2.warpAffine(source_premul, M_affine, (canvas_w, canvas_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
             warped_mask = cv2.warpAffine(layer_alpha, M_affine, (canvas_w, canvas_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
+
 
         # Premultiplied alpha-over. RGB stays premultiplied until final encoding.
         src_a = np.clip(warped_mask, 0.0, 1.0)
@@ -409,12 +419,12 @@ def render_manual_wsi_composite(
         composite[:, :, 3] = src_a + composite[:, :, 3] * inv_a
         source_coverage = composite[:, :, 3].copy()
 
-    # 2. Áp dụng Focus Regions (Polygon, Lasso, Rectangle)
-    if hasattr(project, "focusRegions") and project.focusRegions:
+    # 2. Áp dụng Focus Regions của workspace riêng
+    if ws.focusRegions:
         if progress_callback:
             progress_callback(65, "Đang hòa trộn các vùng nét đã chọn (Focus Regions)...")
 
-        for fr in sorted(project.focusRegions, key=lambda region: region.order):
+        for fr in sorted(ws.focusRegions, key=lambda region: region.order):
             if fr.geometryRevision != project.geometryRevision:
                 continue
             target_layer = next((l for l in project.layers if l.id == fr.selectedLayerId and l.visible), None)
@@ -455,19 +465,19 @@ def render_manual_wsi_composite(
             source_premul = (img_f / 255.0) * source_alpha[:, :, None] * target_layer.opacity
             source_alpha *= target_layer.opacity
             if is_perspective:
-                warped_img = cv2.warpPerspective(source_premul, M_canvas, (canvas_w, canvas_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
+                warped_img = cv2.warpPerspective(source_premul, M_canvas, (canvas_w, canvas_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
                 warped_layer_mask = cv2.warpPerspective(source_alpha, M_canvas, (canvas_w, canvas_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
             else:
                 M_affine = M_canvas[:2, :]
-                warped_img = cv2.warpAffine(source_premul, M_affine, (canvas_w, canvas_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
+                warped_img = cv2.warpAffine(source_premul, M_affine, (canvas_w, canvas_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
                 warped_layer_mask = cv2.warpAffine(source_alpha, M_affine, (canvas_w, canvas_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
+
 
             # Tạo polygon/lasso mask trong canvas space
             pts_canvas = np.array([[p[0] - min_x, p[1] - min_y] for p in fr.pointsWorld], dtype=np.int32)
             region_mask = np.zeros((canvas_h, canvas_w), dtype=np.float32)
             _fill_polygon(region_mask, pts_canvas, 1.0)
 
-            # Inward-only feathering để không lấn sang ngoài vùng
             feather = max(0, int(round(fr.featherPx)))
             if feather:
                 distance = cv2.distanceTransform((region_mask * 255).astype(np.uint8), cv2.DIST_L2, 5)
@@ -477,14 +487,38 @@ def render_manual_wsi_composite(
             final_fr_mask = warped_layer_mask * soft_inside
 
             inv_fr = 1.0 - final_fr_mask
-            # warped_img is premultiplied by layer alpha; shape/feather adds the remaining coverage.
             composite[:, :, :3] = warped_img * soft_inside[:, :, None] + composite[:, :, :3] * inv_fr[:, :, None]
             composite[:, :, 3] = final_fr_mask + composite[:, :, 3] * inv_fr
             source_coverage = composite[:, :, 3].copy()
 
-    # 3. Áp dụng CropRegion / KeepRegion
+    # Trích xuất straight RGB
+    straight_rgb = np.zeros_like(composite[:, :, :3])
+    covered = composite[:, :, 3] > 1e-8
+    straight_rgb[covered] = composite[:, :, :3][covered] / composite[:, :, 3][covered, None]
+    straight_rgb = np.clip(straight_rgb * 255.0, 0.0, 255.0)
+
+    # 3. Áp dụng hậu xử lý tương ứng với biến thể
+    if spec and spec.get("postprocess"):
+        from backend.blending import (
+            estimate_panorama_flat_field,
+            compute_background_balance_gains,
+            apply_variant_postprocessing
+        )
+        post_spec = spec["postprocess"]
+        cov_mask = (source_coverage > 0.1).astype(np.uint8) * 255
+        shading = estimate_panorama_flat_field(straight_rgb.astype(np.uint8), cov_mask) if post_spec.get("gaussian") else None
+        gains = compute_background_balance_gains(straight_rgb.astype(np.uint8), cov_mask) if post_spec.get("balanced") else None
+        straight_rgb = apply_variant_postprocessing(
+            straight_rgb.astype(np.uint8),
+            valid_mask=cov_mask,
+            postprocess_spec=post_spec,
+            shading_profile=shading,
+            bg_gains=gains
+        ).astype(np.float32)
+
+    # 4. Áp dụng CropRegion riêng của workspace
     crop_mask = np.ones((canvas_h, canvas_w), dtype=np.float32)
-    crop_obj = getattr(project, "cropRegion", getattr(project, "keepRegion", None))
+    crop_obj = ws.cropRegion
     if crop_obj and crop_obj.pointsWorld and len(crop_obj.pointsWorld) >= 3:
         if progress_callback:
             progress_callback(75, "Đang áp dụng vùng cắt (CropRegion)...")
@@ -492,13 +526,12 @@ def render_manual_wsi_composite(
         crop_mask = np.zeros((canvas_h, canvas_w), dtype=np.float32)
         _fill_polygon(crop_mask, crop_pts_canvas, 1.0)
 
-    # 4. Áp dụng MaskRegions (Cọ xóa tàng hình / khôi phục)
-    mask_regions = getattr(project, "maskRegions", getattr(project, "exclusionStrokes", []))
+    # 5. Áp dụng MaskRegions riêng của workspace
+    mask_regions = ws.maskRegions
     mask_alpha = np.ones((canvas_h, canvas_w), dtype=np.float32)
     if mask_regions:
         if progress_callback:
             progress_callback(80, "Đang áp dụng các nét cọ/mask (MaskRegions)...")
-        # Sắp xếp theo order
         sorted_masks = sorted(mask_regions, key=lambda m: getattr(m, 'order', 0))
         for m in sorted_masks:
             if not m.pointsWorld:
@@ -518,20 +551,12 @@ def render_manual_wsi_composite(
                 pts_arr = np.array(stroke_pts_canvas, dtype=np.int32)
                 _fill_polygon(mask_alpha, pts_arr, val)
 
-    # 5. Tính Alpha cuối cùng & Companion Training Mask (Section 14 & 15)
-    # Restore chỉ phục hồi tới mức composite coverage trước mask
+    # 6. Tính Alpha cuối cùng & Companion Training Mask
     final_alpha = source_coverage * crop_mask * mask_alpha
     valid_training_mask = (final_alpha > 0.1).astype(np.uint8) * 255
-
-    # Đặt RGB = 0 tại các pixel có Alpha = 0 (tránh rò dữ liệu)
-    straight_rgb = np.zeros_like(composite[:, :, :3])
-    covered = composite[:, :, 3] > 1e-8
-    straight_rgb[covered] = composite[:, :, :3][covered] / composite[:, :, 3][covered, None]
-    straight_rgb = np.clip(straight_rgb * 255.0, 0.0, 255.0)
     straight_rgb[final_alpha <= 1e-8] = 0.0
 
     if background_mode != "transparent":
-        # Chuyển nền sang trắng hoặc đen
         bg_val = 255.0 if background_mode == "white" else 0.0
         alpha_ratio = final_alpha[:, :, None]
         composite_rgb = straight_rgb * alpha_ratio + bg_val * (1.0 - alpha_ratio)
@@ -539,7 +564,7 @@ def render_manual_wsi_composite(
     else:
         final_img = np.dstack((straight_rgb, final_alpha * 255.0)).astype(np.uint8)
 
-    # 6. Xử lý Crop Bounding Box theo CropRegion / CropSettings (Section 4 & 9)
+    # 7. Xử lý Crop Bounding Box theo CropRegion
     crop_info = {
         "cropApplied": False,
         "cropBoundsWorld": [min_x, min_y, canvas_w, canvas_h],
@@ -551,7 +576,7 @@ def render_manual_wsi_composite(
 
     if crop_obj and crop_obj.pointsWorld and len(crop_obj.pointsWorld) >= 3:
         bx, by, bw, bh = crop_obj.boundingRect
-        pad = getattr(getattr(project, "cropSettings", None), "paddingWorld", 0.0) or 0.0
+        pad = getattr(ws.cropSettings, "paddingWorld", 0.0) or 0.0
         shape_x1 = max(min_x, int(np.floor(bx - pad)))
         shape_y1 = max(min_y, int(np.floor(by - pad)))
         shape_x2 = min(max_x, int(np.ceil(bx + bw + pad)))
@@ -559,13 +584,8 @@ def render_manual_wsi_composite(
         crop_info["cropApplied"] = True
         crop_info["cropBoundsWorld"] = [shape_x1, shape_y1, max(0, shape_x2 - shape_x1), max(0, shape_y2 - shape_y1)]
 
-    if crop_obj and crop_obj.pointsWorld and len(crop_obj.pointsWorld) >= 3:
-        crop_settings = getattr(project, "cropSettings", None)
+        crop_settings = ws.cropSettings
         if crop_settings and getattr(crop_settings, "trimOutputBounds", True):
-            bx, by, bw, bh = crop_obj.boundingRect
-            pad = getattr(crop_settings, "paddingWorld", 0.0) or 0.0
-
-            # Half-open integer bounds
             cb_x1 = max(min_x, int(np.floor(bx - pad)))
             cb_y1 = max(min_y, int(np.floor(by - pad)))
             cb_x2 = min(max_x, int(np.ceil(bx + bw + pad)))
@@ -578,17 +598,16 @@ def render_manual_wsi_composite(
 
             if crop_x2 > crop_x1 and crop_y2 > crop_y1:
                 final_img = final_img[crop_y1:crop_y2, crop_x1:crop_x2]
-                valid_training_mask = valid_training_mask[crop_y1:crop_y2, crop_x1:crop_x2]
-                actual_w = crop_x2 - crop_x1
-                actual_h = crop_y2 - crop_y1
-                crop_info = {
-                    "cropApplied": True,
-                    "cropBoundsWorld": [cb_x1, cb_y1, actual_w, actual_h],
-                    "outputWidth": actual_w,
-                    "outputHeight": actual_h,
-                    "outputPixelToWorld": [1.0, 0.0, float(cb_x1), 0.0, 1.0, float(cb_y1), 0.0, 0.0, 1.0],
-                    "worldToOutputPixel": [1.0, 0.0, float(-cb_x1), 0.0, 1.0, float(-cb_y1), 0.0, 0.0, 1.0]
-                }
+                if valid_training_mask is not None:
+                    valid_training_mask = valid_training_mask[crop_y1:crop_y2, crop_x1:crop_x2]
+                cropped_w = crop_x2 - crop_x1
+                cropped_h = crop_y2 - crop_y1
+                crop_origin_x = float(min_x + crop_x1)
+                crop_origin_y = float(min_y + crop_y1)
+                crop_info["outputWidth"] = cropped_w
+                crop_info["outputHeight"] = cropped_h
+                crop_info["outputPixelToWorld"] = [1.0, 0.0, crop_origin_x, 0.0, 1.0, crop_origin_y, 0.0, 0.0, 1.0]
+                crop_info["worldToOutputPixel"] = [1.0, 0.0, -crop_origin_x, 0.0, 1.0, -crop_origin_y, 0.0, 0.0, 1.0]
 
     if progress_callback:
         progress_callback(88, "Hoàn tất xử lý mặt nạ và composite!")
@@ -774,19 +793,83 @@ def export_manual_project(
     output_name: Optional[str] = None,
     export_format: Optional[str] = None,
     background_mode: str = "transparent",
-    progress_callback: Optional[Callable[[int, str], None]] = None
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    variant_id: Optional[str] = None,
+    export_all: bool = False
 ) -> Dict[str, Any]:
-    """Xuất project thành file WSI (TIFF + DZI pyramid) kèm companion training mask"""
+    """
+    Xuất project thành file WSI (TIFF + DZI pyramid) kèm companion training mask:
+    - Nếu export_all=True: Xuất lần lượt đủ 8 biến thể độc lập cho 8 workspace.
+    - Nếu export_all=False: Xuất phiên bản được chỉ định (variant_id) hoặc activeVariantId hiện tại.
+    """
     os.makedirs(output_dir, exist_ok=True)
-    folder_name = output_name or project.folderName or "manual_wsi"
+    base_folder = output_name or project.folderName or "manual_wsi"
     ext = (export_format or "tif").lower().lstrip(".")
 
+    from backend.project_schemas import VARIANTS_SPEC
+
+    if export_all:
+        total = len(VARIANTS_SPEC)
+        results = []
+        for idx, spec in enumerate(VARIANTS_SPEC):
+            vid = spec["id"]
+            v_name = f"{base_folder}_{spec['suffix']}"
+            if progress_callback:
+                progress_callback(int(100 * idx / total), f"Đang xuất biến thể {idx+1}/{total}: {spec['label']}...")
+
+            composite_img, training_mask, crop_info = render_manual_wsi_composite(
+                project,
+                workspace_root,
+                background_mode=background_mode,
+                variant_id=vid
+            )
+
+            res = export_wsi_multiformat(
+                composite_img,
+                output_dir,
+                folder_name=v_name,
+                target_ext=ext,
+                tile_size=254,
+                valid_mask=training_mask,
+                metadata_dict=crop_info
+            )
+            del composite_img
+
+            results.append({
+                "id": vid,
+                "group": spec["group"],
+                "label": spec["label"],
+                "suffix": spec["suffix"],
+                "file_name": res["file_name"],
+                "dzi_url": f"/dzi/{v_name}_dzi/{v_name}.dzi",
+                "output_filepath": res["output_path"],
+                "dzi_filepath": res["dzi_path"],
+                "description": spec["description"]
+            })
+
+        if progress_callback:
+            progress_callback(100, "Đã xuất xong toàn bộ 8 biến thể!")
+
+        return {
+            "status": "success",
+            "variants": results,
+            "activeVariantId": project.activeVariantId
+        }
+
+    # Xuất một phiên bản duy nhất
+    target_id = variant_id or project.activeVariantId or "original"
+    spec = next((s for s in VARIANTS_SPEC if s["id"] == target_id), None)
+    v_name = f"{base_folder}_{spec['suffix']}" if spec else base_folder
+
     if ext in ("tif", "tiff"):
+        # Lưu variantId trước khi gọi
+        project.switch_variant(target_id)
+        # Nếu dùng tiled export cho BigTIFF
         return export_manual_project_tiled(
             project,
             output_dir,
             workspace_root,
-            output_name=folder_name,
+            output_name=v_name,
             background_mode=background_mode,
             progress_callback=progress_callback,
             target_ext=ext,
@@ -806,16 +889,17 @@ def export_manual_project(
         project,
         workspace_root,
         background_mode=background_mode,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        variant_id=target_id
     )
 
     if progress_callback:
-        progress_callback(90, "Đang xuất định dạng và tạo DeepZoom Pyramid Tiles...")
+        progress_callback(90, f"Đang xuất định dạng .{ext} và tạo DeepZoom Pyramid Tiles...")
 
     res = export_wsi_multiformat(
         composite_img,
         output_dir,
-        folder_name=folder_name,
+        folder_name=v_name,
         target_ext=ext,
         tile_size=254,
         valid_mask=training_mask,
@@ -825,13 +909,15 @@ def export_manual_project(
     mask_file_name = os.path.basename(res["mask_path"]) if res.get("mask_path") else None
 
     if progress_callback:
-        progress_callback(100, "Xuất ảnh thủ công hoàn tất!")
+        progress_callback(100, f"Xuất biến thể {target_id} hoàn tất!")
 
     return {
         "status": "success",
+        "variantId": target_id,
         "outputFile": res["output_path"],
         "fileName": res["file_name"],
         "dziPath": res.get("dzi_path"),
+        "dzi_url": f"/dzi/{v_name}_dzi/{v_name}.dzi",
         "trainingMask": mask_file_name,
         "metadataFile": os.path.basename(res["metadata_path"]) if res.get("metadata_path") else None,
         "width": composite_img.shape[1],

@@ -52,7 +52,8 @@ def run_wsi_stitching_pipeline(
     progress_callback=None,
     project_layers=None,
     enable_gaussian_smoothing=True,
-    enhance_clarity=False
+    enhance_clarity=False,
+    **kwargs
 ):
     """
     Automated gigapixel mosaic stitching pipeline:
@@ -91,17 +92,13 @@ def run_wsi_stitching_pipeline(
     report(5, "Reading image tiles...", {"total_images": n_images})
 
     # 1. Đọc toàn bộ ảnh
+    # 1. Đọc toàn bộ ảnh nguồn gốc (chưa qua cân màu hoặc làm mượt)
     images = {}
     source_images = {}
     for i, path in enumerate(image_paths):
         source_images[i] = read_image(path)
         images[i] = source_images[i][:, :, :3] if source_images[i].ndim == 3 and source_images[i].shape[2] == 4 else source_images[i]
         report(5 + int(20 * (i + 1) / n_images), f"Loaded tile {i+1}/{n_images}: {os.path.basename(path)}")
-
-    # Đồng bộ màu sắc và chuẩn hóa ánh sáng nền kính hiển vi giữa các ô ảnh
-    report(24, "Normalizing microscopy flat-field illumination & color balance...")
-    source_images = equalize_tile_illumination(source_images, enable_gaussian_smoothing=enable_gaussian_smoothing)
-    images = {i: (img[:, :, :3] if img.ndim == 3 and img.shape[2] == 4 else img) for i, img in source_images.items()}
 
     # Kiểm tra xem có thể tái sử dụng tọa độ layers đã căn chỉnh chuẩn từ Studio không
     has_valid_project = False
@@ -162,7 +159,7 @@ def run_wsi_stitching_pipeline(
             has_valid_project = False
 
     if not has_valid_project:
-        # 2. Trích xuất đặc trưng
+        # 2. Trích xuất đặc trưng trên ảnh nguồn gốc
         report(25, f"Extracting multi-scale features ({feature_method.upper()})...")
         feature_engine = FeatureEngine(method=feature_method, max_features=8000, enable_clahe=True)
         keypoints = {}
@@ -229,52 +226,122 @@ def run_wsi_stitching_pipeline(
             f"Canvas {canvas_w}x{canvas_h} cần khoảng {estimated_canvas_bytes / (1024 * 1024):.0f} MB, exceed budget {max_memory_mb} MB"
         )
 
-    # 5. Tích lũy và hòa trộn Voronoi Adaptive Seam Blending
+    # 5. Cân bằng phơi sáng mô học theo kietlearntocode/stitch (solve_tissue_specific_gains)
+    from backend.blending import (
+        solve_tissue_specific_gains,
+        estimate_panorama_flat_field,
+        apply_variant_postprocessing
+    )
+    from backend.project_schemas import VARIANTS_SPEC
+
+    report(70, "Computing tissue-specific gains (Kiệt color balancing)...")
+    tile_gains = solve_tissue_specific_gains(source_images, adjusted_transforms, canvas_w, canvas_h)
+
+    # 6. Tích lũy và chọn nét tự động một lần trên ảnh gốc (Adaptive Focus-Stacking)
     report(75, f"Initializing Gigapixel Canvas ({canvas_w}x{canvas_h} px)...")
-    blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode, focus_stacking=True, enhance_clarity=enhance_clarity)
+    blender = FastStreamingBlender(
+        (canvas_h, canvas_w),
+        background_mode=background_mode,
+        focus_stacking=True,
+        enhance_clarity=False,
+        compute_balanced=True
+    )
 
     for i, img in source_images.items():
         H = adjusted_transforms[i]
-        blender.accumulate_tile(img, H, motion_model=motion_model)
+        blender.accumulate_tile(img, H, motion_model=motion_model, tile_gain=tile_gains.get(i))
         report(75 + int(15 * (i + 1) / n_images), f"Blending tile {i+1}/{n_images} into canvas...")
 
-    # 6. Chuẩn hóa kết quả ảnh hoàn chỉnh
-    report(90, "Extracting sharp panorama composite...")
-    blended_image, global_mask = blender.finalize()
+    # 7. Ghép và chuẩn hóa Panorama Gốc & Cân màu (Khóa lựa chọn best_tile_idx)
+    report(90, "Extracting base and color-balanced panoramas (locking best_tile_idx)...")
+    panorama_goc, panorama_balanced, global_mask = blender.finalize()
 
-    # 7. Tự động Crop hình chữ nhật nếu bật
+    # 8. Tự động Crop hình chữ nhật nếu bật
     crop_x = crop_y = 0
     if auto_crop:
-        report(92, "Auto-cropping largest inscribed bounding rectangle...")
+        report(91, "Auto-cropping largest inscribed bounding rectangle...")
         crop_x, crop_y, crop_w, crop_h = find_largest_inscribed_rectangle(global_mask)
         if crop_w > 0 and crop_h > 0:
-            blended_image = blended_image[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
+            panorama_goc = panorama_goc[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
+            panorama_balanced = panorama_balanced[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
             global_mask = global_mask[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
 
-    # 8. Xuất file kết quả đúng định dạng vào output_dir (data/output)
-    report(95, f"Exporting gigapixel mosaic format .{export_format} and generating DeepZoom pyramids (DZI)...")
+    # 9. Ước lượng trường sáng Gaussian MỘT LẦN DUY NHẤT để tái sử dụng
+    report(92, "Computing 2D Gaussian flat-field profile once...")
+    shading_profile = estimate_panorama_flat_field(panorama_goc, global_mask)
+
+    # 10. Sinh tuần tự các phiên bản hậu xử lý (tiết kiệm bộ nhớ RAM)
+    export_dzi = kwargs.get("export_dzi", True)
+    export_mask = kwargs.get("export_mask", True)
+    selected_variants = kwargs.get("selected_variants", None)
+
+    if selected_variants:
+        specs_to_run = [
+            s for s in VARIANTS_SPEC
+            if s["id"] in selected_variants or s["suffix"] in selected_variants
+        ]
+    else:
+        specs_to_run = VARIANTS_SPEC
+
     os.makedirs(output_dir, exist_ok=True)
-    out_filename = f"{custom_output_name}.{export_format}"
-    export_result = export_wsi_multiformat(
-        blended_image,
-        output_dir,
-        folder_name=custom_output_name,
-        target_ext=export_format
-    )
-    out_filepath = export_result["output_path"]
-    dzi_filepath = export_result["dzi_path"]
+    variants = []
+    total_variants = len(specs_to_run)
+
+    for idx, spec in enumerate(specs_to_run):
+        v_id = spec["id"]
+        v_suffix = spec["suffix"]
+        v_label = spec["label"]
+        v_name = f"{custom_output_name}_{v_suffix}"
+
+        report(92 + int(7 * (idx + 1) / total_variants), f"Exporting variant {idx+1}/{total_variants}: {v_label} ({v_name})...")
+
+        base_canvas = panorama_balanced if spec["postprocess"].get("balanced", False) else panorama_goc
+
+        variant_img = apply_variant_postprocessing(
+            base_canvas,
+            valid_mask=global_mask,
+            postprocess_spec=spec["postprocess"],
+            shading_profile=shading_profile
+        )
+
+        export_res = export_wsi_multiformat(
+            variant_img,
+            output_dir,
+            folder_name=v_name,
+            target_ext=export_format,
+            valid_mask=global_mask if export_mask else None,
+            export_dzi=export_dzi,
+            export_mask=export_mask
+        )
+
+        del variant_img
+
+        variants.append({
+            "id": v_id,
+            "group": spec["group"],
+            "label": v_label,
+            "suffix": v_suffix,
+            "file_name": export_res["file_name"],
+            "dzi_url": f"/dzi/{v_name}_dzi/{v_name}.dzi" if export_dzi else "",
+            "output_filepath": export_res["output_path"],
+            "dzi_filepath": export_res.get("dzi_path"),
+            "description": spec["description"]
+        })
 
     elapsed_time = round(time.time() - start_time, 2)
-    final_h, final_w = blended_image.shape[:2]
+    final_h, final_w = panorama_goc.shape[:2]
     output_pixel_to_world, world_to_output_pixel = _output_coordinate_metadata(bbox, crop_x, crop_y)
 
     serializable_transforms = {}
-    # Persist source-to-world transforms, not the internal canvas-shifted matrices.
-    # outputPixelToWorld carries the canvas shift and optional auto-crop offset.
     for idx, H in global_transforms.items():
         serializable_transforms[idx] = H.flatten().tolist()
 
-    report(100, "Mosaic stitching completed successfully!", {
+    primary_variant = variants[0]
+    out_filepath = primary_variant["output_filepath"]
+    dzi_filepath = primary_variant["dzi_filepath"]
+    out_filename = primary_variant["file_name"]
+
+    report(100, "Mosaic stitching completed successfully with 8 postprocessing variants!", {
         "output_file": out_filepath,
         "dzi_file": dzi_filepath,
         "format": export_format,
@@ -282,6 +349,8 @@ def run_wsi_stitching_pipeline(
         "width": final_w,
         "height": final_h,
         "total_images": n_images,
+        "variants": variants,
+        "activeVariantId": "original",
         "matches_graph": matches_graph_data,
         "layer_transforms": serializable_transforms,
         "elapsed_time_sec": elapsed_time,
@@ -299,5 +368,7 @@ def run_wsi_stitching_pipeline(
         "layer_transforms": serializable_transforms,
         "graph_data": matches_graph_data,
         "outputPixelToWorld": output_pixel_to_world,
-        "worldToOutputPixel": world_to_output_pixel
+        "worldToOutputPixel": world_to_output_pixel,
+        "variants": variants,
+        "activeVariantId": "original"
     }

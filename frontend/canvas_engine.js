@@ -447,30 +447,8 @@ const CanvasEngine = (function () {
         }
 
         drawFocusAnnotations(ctx, state) {
-            if (!state.focusRegions || state.focusRegions.length === 0) return;
-            state.focusRegions.forEach(fr => {
-                const layer = state.layers.find(item => item.id === fr.selectedLayerId && item.visible);
-                const points = fr.pointsWorld || [];
-                if (!layer || points.length < 3) return;
-                const screenPoints = points.map(point => this.worldToScreen(point[0], point[1]));
-                ctx.save();
-                ctx.beginPath();
-                ctx.moveTo(screenPoints[0][0], screenPoints[0][1]);
-                for (let i = 1; i < screenPoints.length; i++) {
-                    ctx.lineTo(screenPoints[i][0], screenPoints[i][1]);
-                }
-                ctx.closePath();
-                ctx.strokeStyle = '#10b981';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([5, 4]);
-                ctx.stroke();
-
-                // Label tag
-                ctx.fillStyle = '#10b981';
-                ctx.font = 'bold 11px Outfit, sans-serif';
-                ctx.fillText(`★ Focus: ${layer.sourceId.substring(0, 15)}`, screenPoints[0][0] + 4, screenPoints[0][1] - 4);
-                ctx.restore();
-            });
+            // Sau Apply chỉ hiển thị mô đã chọn; không vẽ viền/nhãn cố định.
+            return;
         }
 
         drawKeepRegion(ctx, state) {

@@ -138,6 +138,14 @@
         btnCancelSaveModal: document.getElementById('btnCancelSaveModal'),
         btnConfirmSave: document.getElementById('btnConfirmSave'),
         btnDirectBrowserDownload: document.getElementById('btnDirectBrowserDownload'),
+        radioExportCurrent: document.getElementById('radioExportCurrent'),
+        radioExportAll: document.getElementById('radioExportAll'),
+        modalActiveVariantLabel: document.getElementById('modalActiveVariantLabel'),
+        modalStorageEstimateBanner: document.getElementById('modalStorageEstimateBanner'),
+        modalStorageEstimateText: document.getElementById('modalStorageEstimateText'),
+        btnExportAllVariants: document.getElementById('btnExportAllVariants'),
+        btnSaveOutputText: document.getElementById('btnSaveOutputText'),
+        variantTabsBar: document.getElementById('variantTabsBar'),
 
         // Right Inspector Elements
         btnToggleInspectMode: document.getElementById('btnToggleInspectMode'),
@@ -166,6 +174,8 @@
         inspectorPatchesList: document.getElementById('inspectorPatchesList'),
         focusRegionsSection: document.getElementById('focusRegionsSection'),
         focusRegionCount: document.getElementById('focusRegionCount'),
+        currentVariantBadgeText: document.getElementById('currentVariantBadgeText'),
+        btnCopyFocusFromOriginal: document.getElementById('btnCopyFocusFromOriginal'),
         focusRegionsList: document.getElementById('focusRegionsList'),
         btnClearAllFocusRegions: document.getElementById('btnClearAllFocusRegions'),
         exclusionStrokesSection: document.getElementById('exclusionStrokesSection'),
@@ -236,21 +246,73 @@
         lastPatches: []
     };
 
+    // Cache riêng biệt lưu trữ ảnh lát cắt nét của từng vùng theo ID (tránh vùng cũ bị đè hình)
+    const focusPatchMap = new Map();
+
     // Current preview path variable
     let currentPreviewFile = null;
 
     // ==========================================
-    // 0. Export Modal Handler
+    // 0. 8-Variant Management & Storage Estimation
     // ==========================================
-    function openSaveModal() {
+    const VARIANT_SUFFIX_MAP = {
+        'original': '01_goc',
+        'original_balanced': '02_goc_can_sang',
+        'original_clarity': '03_goc_sac_net',
+        'original_full': '04_goc_can_sang_net',
+        'gaussian': '05_gaussian',
+        'gaussian_balanced': '06_gaussian_can_sang',
+        'gaussian_clarity': '07_gaussian_sac_net',
+        'gaussian_full': '08_gaussian_full'
+    };
+
+    function calculateStorageEstimate(isAll = false) {
+        const state = ProjectStore.getState();
+        const numLayers = (state.layers || []).length || 8;
+        const approxMegaBytes = Math.max(30, Math.round(numLayers * 12.5 * 0.7));
+        const singleEst = approxMegaBytes >= 1024 ? (approxMegaBytes / 1024).toFixed(1) + ' GB' : approxMegaBytes + ' MB';
+        const allBytes = approxMegaBytes * 8;
+        const allEst = allBytes >= 1024 ? (allBytes / 1024).toFixed(1) + ' GB' : allBytes + ' MB';
+
+        return {
+            singleEst,
+            allEst,
+            text: isAll
+                ? `~${allEst} (Đủ 8 file TIFF + 8 bộ DeepZoom DZI pyramid)`
+                : `~${singleEst} (1 file TIFF + 1 bộ DZI) | Dự toán cả 8 bản: ~${allEst}`
+        };
+    }
+
+    function updateModalStorageEstimate() {
+        if (!DOM.modalStorageEstimateText) return;
+        const isAll = DOM.radioExportAll && DOM.radioExportAll.checked;
+        const est = calculateStorageEstimate(isAll);
+        DOM.modalStorageEstimateText.textContent = est.text;
+    }
+
+    function openSaveModal(scope = 'current') {
         const state = ProjectStore.getState();
         const folderName = state.folderName || 'stitched_wsi';
-        const exportFormat = DOM.cfgExportFormat.value || 'tif';
+        const exportFormat = (DOM.cfgExportFormat && DOM.cfgExportFormat.value) || 'tif';
 
         DOM.modalInputFileName.value = folderName;
         DOM.modalSelectFormat.value = exportFormat;
         DOM.modalInputTargetDir.value = DOM.inputOutputDir ? DOM.inputOutputDir.value : 'data/result';
 
+        const activeVariantId = state.activeVariantId || 'original';
+        const variantInfo = (uiState.variants || []).find(v => v.id === activeVariantId);
+        const label = variantInfo ? variantInfo.label : activeVariantId;
+
+        if (DOM.modalActiveVariantLabel) {
+            DOM.modalActiveVariantLabel.textContent = label;
+        }
+
+        if (DOM.radioExportCurrent && DOM.radioExportAll) {
+            DOM.radioExportCurrent.checked = (scope !== 'all');
+            DOM.radioExportAll.checked = (scope === 'all');
+        }
+
+        updateModalStorageEstimate();
         updateModalPreviewPath();
         DOM.saveModalBackdrop.style.display = 'flex';
     }
@@ -260,59 +322,185 @@
     }
 
     function updateModalPreviewPath() {
-        const fileName = (DOM.modalInputFileName.value.trim() || 'stitched_wsi');
+        const state = ProjectStore.getState();
+        const fileName = (DOM.modalInputFileName.value.trim() || state.folderName || 'stitched_wsi');
         const ext = DOM.modalSelectFormat.value || 'tif';
         const targetDir = (DOM.modalInputTargetDir.value.trim() || 'data/result');
-        DOM.modalFullTargetPathPreview.textContent = `${targetDir}/${fileName}.${ext}`;
+        const isAll = DOM.radioExportAll && DOM.radioExportAll.checked;
+
+        if (isAll) {
+            DOM.modalFullTargetPathPreview.textContent = `${targetDir}/${fileName}_01_goc.${ext} ... ${fileName}_08_gaussian_full.${ext} (8 file + 8 DZI)`;
+        } else {
+            const activeVariantId = state.activeVariantId || 'original';
+            const sfx = VARIANT_SUFFIX_MAP[activeVariantId] || '01_goc';
+            DOM.modalFullTargetPathPreview.textContent = `${targetDir}/${fileName}_${sfx}.${ext}`;
+        }
     }
 
     async function handleConfirmSave() {
-        const fileName = DOM.modalInputFileName.value.trim() || 'stitched_wsi';
+        const state = ProjectStore.getState();
+        const fileName = DOM.modalInputFileName.value.trim() || state.folderName || 'stitched_wsi';
         const targetDir = DOM.modalInputTargetDir.value.trim() || 'data/result';
         const exportFormat = DOM.modalSelectFormat.value || 'tif';
+        const isAll = DOM.radioExportAll && DOM.radioExportAll.checked;
 
-        setStatus('busy', 'Saving mosaic to destination directory...');
         closeSaveModal();
 
+        uiState.isStitching = true;
+        if (DOM.btnRunStitching) DOM.btnRunStitching.disabled = true;
+        setStatus('busy', isAll ? 'Đang dựng tuần tự 8 phiên bản độc lập...' : `Đang xuất phiên bản ${state.activeVariantId}...`);
+        DOM.progressPanel.style.display = 'block';
+        DOM.terminalLogs.innerHTML = '';
+
         try {
-            const res = await fetch('/api/save_wsi', {
+            const bodyPayload = {
+                project: state,
+                exportFormat: exportFormat,
+                targetDir: targetDir,
+                customOutputName: fileName,
+                backgroundMode: DOM.cfgBackgroundMode ? DOM.cfgBackgroundMode.value : 'white'
+            };
+            if (isAll) {
+                bodyPayload.exportAll = true;
+            } else {
+                bodyPayload.variantId = state.activeVariantId || 'original';
+            }
+
+            const res = await fetch(`/api/projects/${state.id}/exports`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    folderName: fileName,
-                    targetDir: targetDir,
-                    exportFormat: exportFormat,
-                    sourcePreviewFile: currentPreviewFile || `data/output/${fileName}.${exportFormat}`
-                })
+                body: JSON.stringify(bodyPayload)
             });
-
             const data = await res.json();
-            if (data.status === 'success') {
-                setStatus('ready', 'Saved successfully!');
-                alert(`✅ MOSAIC SAVED SUCCESSFULLY!\n\n📁 Directory: ${data.folder}\n📄 File: ${data.fileName}\n📍 Full Path: ${data.savedPath}`);
+            if (data.status === 'started') {
+                startPollingStatus();
             } else {
-                setStatus('ready', 'Error saving mosaic');
-                alert("❌ Error: " + (data.error || "Unable to save file"));
+                alert("❌ Lỗi xuất ảnh: " + (data.error || "Không thể khởi chạy tác vụ xuất"));
+                uiState.isStitching = false;
+                if (DOM.btnRunStitching) DOM.btnRunStitching.disabled = false;
+                setStatus('ready', 'Ready');
             }
         } catch (err) {
-            setStatus('ready', 'Connection error');
-            alert("❌ Server connection error: " + err.message);
+            alert("❌ Lỗi kết nối máy chủ: " + err.message);
+            uiState.isStitching = false;
+            if (DOM.btnRunStitching) DOM.btnRunStitching.disabled = false;
+            setStatus('ready', 'Ready');
         }
     }
 
     function handleDirectBrowserDownload() {
-        const fileName = DOM.modalInputFileName.value.trim() || 'stitched_wsi';
+        const state = ProjectStore.getState();
+        const activeVariantId = state.activeVariantId || 'original';
+        const variantInfo = (uiState.variants || []).find(v => v.id === activeVariantId);
+        const fileName = DOM.modalInputFileName.value.trim() || state.folderName || 'stitched_wsi';
         const exportFormat = DOM.modalSelectFormat.value || 'tif';
-        const fullFileName = `${fileName}.${exportFormat}`;
-        const downloadUrl = `/api/image?path=${currentPreviewFile || 'data/output/' + fullFileName}`;
+        const currentFile = (variantInfo && variantInfo.file_name) || currentPreviewFile || `data/result/${fileName}.${exportFormat}`;
+        const downloadUrl = `/api/image?path=${currentFile}`;
 
         const a = document.createElement('a');
         a.href = downloadUrl;
-        a.download = fullFileName;
+        a.download = currentFile.split('/').pop().split('\\').pop();
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         closeSaveModal();
+    }
+
+    // ==========================================
+    // 8-Variant Tabs & Workspace Synchronization
+    // ==========================================
+    function renderVariantBadges() {
+        const state = ProjectStore.getState();
+        const workspaces = state.variantWorkspaces || {};
+        const activeId = state.activeVariantId || 'original';
+
+        ALL_VARIANT_IDS.forEach(vid => {
+            const badgeEl = document.getElementById(`vbadge-${vid}`);
+            if (!badgeEl) return;
+            const ws = (vid === activeId) ? state : (workspaces[vid] || {});
+            const focusCount = (ws.focusRegions || []).length;
+            const maskCount = (ws.maskRegions || []).length;
+            const hasCrop = Boolean(ws.cropRegion && ws.cropRegion.pointsWorld && ws.cropRegion.pointsWorld.length >= 3);
+
+            const parts = [];
+            if (focusCount > 0) parts.push(`${focusCount} nét`);
+            if (maskCount > 0) parts.push(`${maskCount} mask`);
+            if (hasCrop) parts.push('crop');
+
+            badgeEl.textContent = parts.join(' · ');
+        });
+    }
+
+    function switchVariantTab(variantId) {
+        if (!variantId || !ALL_VARIANT_IDS.includes(variantId)) return;
+        const state = ProjectStore.getState();
+        if (state.activeVariantId === variantId && uiState.currentVariantId === variantId) return;
+
+        // 1. Lưu tâm ảnh, mức zoom và góc xoay từ OpenSeadragon viewport
+        let savedViewport = null;
+        if (uiState.osdViewer && uiState.osdViewer.viewport && uiState.osdViewer.isOpen()) {
+            const vp = uiState.osdViewer.viewport;
+            const c = vp.getCenter(true);
+            savedViewport = {
+                center: new OpenSeadragon.Point(c.x, c.y),
+                zoom: vp.getZoom(true),
+                rotation: vp.getRotation()
+            };
+        }
+
+        // 2. Chuyển variant trong ProjectStore (lưu workspace cũ và khôi phục workspace mới)
+        ProjectStore.switchVariant(variantId);
+        uiState.currentVariantId = variantId;
+
+        // 3. Highlight tab button tương ứng
+        document.querySelectorAll('.variant-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.variant === variantId);
+        });
+
+        // 4. Tìm variant info từ kết quả pipeline (uiState.variants)
+        const variantInfo = (uiState.variants || []).find(v => v.id === variantId);
+        const folderName = state.folderName || 'stitched_wsi';
+        const sfx = VARIANT_SUFFIX_MAP[variantId] || '01_goc';
+        const defaultDzi = `/dzi/${folderName}_${sfx}_dzi/${folderName}_${sfx}.dzi`;
+        const dziUrl = variantInfo ? variantInfo.dzi_url : defaultDzi;
+        const defaultFile = `data/result/${folderName}_${sfx}.tif`;
+        currentPreviewFile = variantInfo ? variantInfo.file_name : defaultFile;
+
+        // Cập nhật nhãn nút Xuất
+        const label = variantInfo ? variantInfo.label : variantId;
+        if (DOM.btnSaveOutputText) {
+            DOM.btnSaveOutputText.textContent = `Xuất ${label}`;
+        }
+        if (DOM.saveBtnText) {
+            DOM.saveBtnText.textContent = `Xuất ${label}`;
+        }
+        if (DOM.modalActiveVariantLabel) {
+            DOM.modalActiveVariantLabel.textContent = label;
+        }
+
+        // 5. Nạp DZI mới vào OpenSeadragon và bảo toàn tọa độ viewport
+        if (uiState.osdViewer) {
+            const onOpenPreserve = function() {
+                uiState.osdViewer.removeHandler('open', onOpenPreserve);
+                if (savedViewport) {
+                    uiState.osdViewer.viewport.panTo(savedViewport.center, true);
+                    uiState.osdViewer.viewport.zoomTo(savedViewport.zoom, null, true);
+                    uiState.osdViewer.viewport.setRotation(savedViewport.rotation || 0, true);
+                }
+                updateOsdFocusOverlays();
+                renderOsdDrawingDraft();
+                updateActiveRegionBoxScreenPosition();
+            };
+            uiState.osdViewer.addHandler('open', onOpenPreserve);
+            uiState.osdSourceKey = dziUrl;
+            uiState.osdViewer.open(dziUrl);
+        }
+
+        // 6. Cập nhật Clarity Inspector, Mask và Crop tương ứng
+        renderVariantBadges();
+        updateOsdFocusOverlays();
+        renderRegionsList();
+        updateAccordionSummaries();
     }
 
     // ==========================================
@@ -996,12 +1184,13 @@
                 ctx.closePath();
 
                 // Render cached sharp patch image if available
+                const patchSrc = fr.imageDataUrl || focusPatchMap.get(fr.id);
                 if (fr._cachedImg && fr._cachedImg.complete && fr._cachedImg.naturalWidth > 0) {
                     ctx.save();
                     ctx.clip();
                     ctx.drawImage(fr._cachedImg, minX, minY, w, h);
                     ctx.restore();
-                } else if (fr.imageDataUrl && !fr._loadingImg) {
+                } else if (patchSrc && !fr._loadingImg) {
                     fr._loadingImg = true;
                     const img = new Image();
                     img.onload = () => {
@@ -1010,45 +1199,8 @@
                         renderOsdDrawingDraft();
                     };
                     img.onerror = () => { fr._loadingImg = false; };
-                    img.src = fr.imageDataUrl;
-                } else if (fr.selectedLayerId && !fr._loadingImg) {
-                    fr._loadingImg = true;
-                    const layer = state.layers ? state.layers.find(l => l.id === fr.selectedLayerId) : null;
-                    if (layer && layer.sourcePath) {
-                        const img = new Image();
-                        img.onload = () => {
-                            fr._cachedImg = img;
-                            fr._loadingImg = false;
-                            renderOsdDrawingDraft();
-                        };
-                        img.onerror = () => { fr._loadingImg = false; };
-                        img.src = `/api/thumbnail?path=${encodeURIComponent(layer.sourcePath)}&size=512`;
-                    }
+                    img.src = patchSrc;
                 }
-
-                // Vibrant green neon border highlighting the applied sharp slice
-                ctx.beginPath();
-                ctx.moveTo(pts[0][0], pts[0][1]);
-                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-                ctx.closePath();
-                const isJustApplied = (inspectorState.justAppliedRegionId === fr.id);
-                ctx.strokeStyle = isJustApplied ? '#34d399' : '#10b981';
-                ctx.lineWidth = isJustApplied ? 3.5 : 2;
-                ctx.shadowColor = '#10b981';
-                ctx.shadowBlur = isJustApplied ? 16 : 6;
-                ctx.stroke();
-
-                // Applied badge label on top of region
-                const layer = state.layers ? state.layers.find(l => l.id === fr.selectedLayerId) : null;
-                const name = layer ? layer.sourceId : 'Applied Slice';
-                const label = `⭐ ${name.length > 18 ? name.substring(0, 16) + '...' : name}`;
-                ctx.font = 'bold 11px Inter, sans-serif';
-                const tw = ctx.measureText(label).width;
-                ctx.fillStyle = isJustApplied ? 'rgba(52, 211, 153, 0.95)' : 'rgba(16, 185, 129, 0.9)';
-                ctx.shadowBlur = 0;
-                ctx.fillRect(minX, Math.max(0, minY - 20), tw + 14, 18);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(label, minX + 6, Math.max(13, minY - 6));
 
                 ctx.restore();
             });
@@ -1434,7 +1586,14 @@
         }
 
         const [rx, ry, rw, rh] = boundingRect;
-        inspectorState.currentRegion = { shapeType, pointsWorld, boundingRect };
+        const targetRegionId = (regionData && typeof regionData === 'object' && regionData.id) ? regionData.id : null;
+        inspectorState.currentRegion = {
+            id: targetRegionId,
+            shapeType,
+            pointsWorld,
+            boundingRect,
+            selectedLayerId: (regionData && regionData.selectedLayerId) || null
+        };
         inspectorState.currentWorldRect = boundingRect;
         inspectorState.isPinned = true;
         updateActiveRegionBoxScreenPosition();
@@ -1523,13 +1682,29 @@
         inspectorState.abortController = new AbortController();
 
         try {
+            // Chỉ gửi thông tin layer tối thiểu cần thiết cho trích xuất patch, tránh gửi các chuỗi base64 khổng lồ
+            const strippedProject = {
+                id: state.id,
+                version: state.version,
+                revision: state.revision,
+                layers: (state.layers || []).map(l => ({
+                    id: l.id,
+                    sourceId: l.sourceId,
+                    sourcePath: l.sourcePath,
+                    sourceWidth: l.sourceWidth,
+                    sourceHeight: l.sourceHeight,
+                    sourceToWorld: l.sourceToWorld,
+                    visible: l.visible !== false
+                }))
+            };
+
             const projId = encodeURIComponent(state.id || 'current_project');
             const res = await fetch(`/api/projects/${projId}/inspect`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 signal: inspectorState.abortController.signal,
                 body: JSON.stringify({
-                    project: state,
+                    project: strippedProject,
                     shapeType: regionData.shapeType || 'rectangle',
                     pointsWorld: regionData.pointsWorld,
                     boundingRect: regionData.boundingRect,
@@ -1820,6 +1995,7 @@
 
     function applyPatchAsFocusRegion(layerId) {
         if (!inspectorState.currentRegion) return;
+        const state = ProjectStore.getState();
         const allPatches = [...(inspectorState.lastPatches || []), ...(lightboxState.patches || [])];
         const targetPatch = allPatches.find(p => p.layerId === layerId);
         const patchDataUrl = targetPatch ? targetPatch.imageDataUrl : null;
@@ -1835,6 +2011,8 @@
         );
         if (newRegion && patchDataUrl) {
             newRegion.imageDataUrl = patchDataUrl;
+            newRegion.isThumbnail = true;
+            focusPatchMap.set(newRegion.id, patchDataUrl);
             const img = new Image();
             img.onload = () => {
                 newRegion._cachedImg = img;
@@ -1843,27 +2021,53 @@
             img.src = patchDataUrl;
         }
 
+        // Tải ngay patch độ phân giải gốc siêu nét (Native Resolution) để thay thế thumbnail 256px,
+        // loại bỏ hoàn toàn hiện tượng mờ mô tế bào khi xem phóng to trên OpenSeadragon
+        if (newRegion && layerId) {
+            fetch(`/api/projects/${state.id}/patch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    layerId: layerId,
+                    pointsWorld: newRegion.pointsWorld,
+                    boundingRect: newRegion.boundingRect,
+                    shapeType: newRegion.shapeType || 'rectangle'
+                })
+            })
+            .then(res => {
+                if (res.ok) return res.blob();
+                throw new Error('Patch error');
+            })
+            .then(blob => {
+                const nativeBlobUrl = URL.createObjectURL(blob);
+                newRegion.imageDataUrl = nativeBlobUrl;
+                newRegion.isThumbnail = false;
+                focusPatchMap.set(newRegion.id, nativeBlobUrl);
+                const nImg = new Image();
+                nImg.onload = () => {
+                    newRegion._cachedImg = nImg;
+                    renderOsdDrawingDraft();
+                };
+                nImg.src = nativeBlobUrl;
+                updateOsdFocusOverlays();
+            })
+            .catch(err => {
+                console.warn('Native patch fetch error, fallback to thumbnail:', err);
+            });
+        }
+
+
         if (inspectorState.currentRegion) {
+            if (newRegion) inspectorState.currentRegion.id = newRegion.id;
             inspectorState.currentRegion.selectedLayerId = layerId;
             inspectorState.currentRegion.imageDataUrl = patchDataUrl;
         }
 
-        const state = ProjectStore.getState();
         const layer = state.layers ? state.layers.find(l => l.id === layerId) : null;
         const layerName = layer ? layer.sourceId : layerId;
 
-        // Immediate visual feedback & pulse animation
-        if (newRegion) {
-            inspectorState.justAppliedRegionId = newRegion.id;
-            updateActiveRegionBoxScreenPosition();
-            renderOsdDrawingDraft();
-            setTimeout(() => {
-                if (inspectorState.justAppliedRegionId === newRegion.id) {
-                    inspectorState.justAppliedRegionId = null;
-                    renderOsdDrawingDraft();
-                }
-            }, 2000);
-        }
+        // Sau Apply chỉ giữ mô đã chọn, không giữ khung/pulse trên ảnh.
+        inspectorState.justAppliedRegionId = null;
 
         // Cập nhật trạng thái nút và card trong sidebar
         if (DOM.inspectorPatchesList) {
@@ -1893,6 +2097,8 @@
 
         renderFocusRegionsList();
         updateOsdFocusOverlays();
+        ProjectStore.selectRegions([]);
+        unpinInspector();
         CanvasEngine.requestRender();
         setStatus('ready', `Đã gán ảnh nét [${layerName}] cho vùng [${Math.round(newRegion.boundingRect[0])}, ${Math.round(newRegion.boundingRect[1])}]`);
         showToast(`Đã gán lát cắt [${layerName}] thành công!`, 'success');
@@ -1935,16 +2141,60 @@
             patchImg.style.display = 'block';
             patchImg.style.pointerEvents = 'none';
             patchImg.style.opacity = '1.0';
-            patchImg.style.boxShadow = '0 0 12px rgba(34, 211, 238, 0.7)';
+            patchImg.style.boxShadow = 'none';
 
-            const targetPatch = (inspectorState.lastPatches || []).find(p => p.layerId === fr.selectedLayerId);
-            if (targetPatch && targetPatch.imageDataUrl) {
-                patchImg.src = targetPatch.imageDataUrl;
-            } else {
-                const layer = state.layers.find(item => item.id === fr.selectedLayerId);
-                if (!layer) return;
-                patchImg.src = `/api/thumbnail?path=${encodeURIComponent(layer.sourcePath)}&size=512`;
+            // 1. Ưu tiên số 1: Lấy đúng ảnh patch đã lưu của chính vùng này (fr.imageDataUrl hoặc cache theo ID)
+            let patchSrc = fr.imageDataUrl || focusPatchMap.get(fr.id);
+
+            // 2. Chỉ khi vùng này ĐANG là vùng inspect hiện tại mới lấy từ inspectorState.lastPatches
+            if (!patchSrc && inspectorState.currentRegion) {
+                const isCurrent = (fr.id && fr.id === inspectorState.currentRegion.id) ||
+                    (fr.boundingRect && inspectorState.currentRegion.boundingRect &&
+                     JSON.stringify(fr.boundingRect) === JSON.stringify(inspectorState.currentRegion.boundingRect));
+                if (isCurrent) {
+                    const targetPatch = (inspectorState.lastPatches || []).find(p => p.layerId === fr.selectedLayerId);
+                    if (targetPatch && targetPatch.imageDataUrl) {
+                        patchSrc = targetPatch.imageDataUrl;
+                        fr.imageDataUrl = patchSrc;
+                        focusPatchMap.set(fr.id, patchSrc);
+                    }
+                }
             }
+
+            // 3. Gán ảnh vào overlay; tự động nâng cấp lên patch native độ nét cao nếu đang dùng thumbnail
+            if (patchSrc) {
+                patchImg.src = patchSrc;
+            }
+            if (fr.selectedLayerId && !fr._patchFetching && (fr.isThumbnail || !patchSrc || patchSrc.startsWith('data:image'))) {
+                fr._patchFetching = true;
+                fetch(`/api/projects/${state.id}/patch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        layerId: fr.selectedLayerId,
+                        pointsWorld: fr.pointsWorld,
+                        boundingRect: fr.boundingRect,
+                        shapeType: fr.shapeType || 'rectangle'
+                    })
+                })
+                .then(res => {
+                    if (res.ok) return res.blob();
+                    throw new Error('Patch error');
+                })
+                .then(blob => {
+                    const blobUrl = URL.createObjectURL(blob);
+                    fr.imageDataUrl = blobUrl;
+                    fr.isThumbnail = false;
+                    focusPatchMap.set(fr.id, blobUrl);
+                    patchImg.src = blobUrl;
+                    fr._patchFetching = false;
+                    renderOsdDrawingDraft();
+                })
+                .catch(() => {
+                    fr._patchFetching = false;
+                });
+            }
+
             const polygon = outputPoints.map(point => `${((point[0] - minX) / w) * 100}% ${((point[1] - minY) / h) * 100}%`).join(',');
             patchImg.style.clipPath = `polygon(${polygon})`;
             container.appendChild(patchImg);
@@ -1961,13 +2211,31 @@
 
     function renderFocusRegionsList() {
         const state = ProjectStore.getState();
+        const activeId = state.activeVariantId || 'original';
+        const variantInfo = (uiState.variants || []).find(v => v.id === activeId);
+        const variantLabel = variantInfo ? variantInfo.label : (VARIANT_NAMES_MAP[activeId] || 'Gốc');
+
+        if (DOM.currentVariantBadgeText) {
+            DOM.currentVariantBadgeText.textContent = variantLabel;
+            const isGaussian = activeId.startsWith('gaussian');
+            DOM.currentVariantBadgeText.style.color = isGaussian ? '#f59e0b' : '#38bdf8';
+        }
+
+        const ws = state.variantWorkspaces || {};
+        const origHasRegions = ws['original'] && Array.isArray(ws['original'].focusRegions) && ws['original'].focusRegions.length > 0;
+        const curHasRegions = Array.isArray(state.focusRegions) && state.focusRegions.length > 0;
+
+        if (DOM.btnCopyFocusFromOriginal) {
+            DOM.btnCopyFocusFromOriginal.style.display = (activeId !== 'original' && origHasRegions && !curHasRegions) ? 'inline-flex' : 'none';
+        }
+
         const list = state.focusRegions || [];
         if (DOM.focusRegionCount) DOM.focusRegionCount.textContent = list.length;
         if (!DOM.focusRegionsList) return;
         DOM.focusRegionsList.innerHTML = '';
 
         if (list.length === 0) {
-            DOM.focusRegionsList.innerHTML = '<div class="empty-hint">No focus regions applied yet</div>';
+            DOM.focusRegionsList.innerHTML = `<div class="empty-hint">Chưa có vùng nét nào cho [${variantLabel}]</div>`;
             updateOsdFocusOverlays();
             return;
         }
@@ -2008,9 +2276,11 @@
 
                 // 1. Kích hoạt lại vùng soi trên viewport
                 handleRegionSelected({
+                    id: fr.id,
                     shapeType: fr.shapeType || 'rectangle',
                     pointsWorld: fr.pointsWorld,
-                    boundingRect: fr.boundingRect
+                    boundingRect: fr.boundingRect,
+                    selectedLayerId: fr.selectedLayerId
                 });
 
                 // 2. Pan tới vị trí vùng soi trên OpenSeadragon nếu ở chế độ tự động
@@ -2259,12 +2529,29 @@
         DOM.osdPlaceholder.style.display = 'none';
         DOM.resultActions.style.display = 'flex';
         DOM.btnSaveOutput.style.display = 'inline-flex';
+        if (DOM.btnExportAllVariants) DOM.btnExportAllVariants.style.display = 'inline-flex';
+        if (DOM.variantTabsBar) DOM.variantTabsBar.style.display = 'flex';
 
         const state = ProjectStore.getState();
         const folderName = state.folderName || 'stitched_wsi';
-        const fileName = result.fileName || `${folderName}.${result.format || 'tif'}`;
 
-        currentPreviewFile = `data/result/${fileName}`;
+        // Lưu danh sách 8 biến thể nếu backend trả về
+        if (result.variants && Array.isArray(result.variants)) {
+            uiState.variants = result.variants;
+        }
+
+        const activeVariantId = result.activeVariantId || state.activeVariantId || 'original';
+        uiState.currentVariantId = activeVariantId;
+
+        // Cập nhật tab active trên giao diện
+        document.querySelectorAll('.variant-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.variant === activeVariantId);
+        });
+
+        // Tìm variant active
+        const activeVariant = (uiState.variants || []).find(v => v.id === activeVariantId);
+        const fileName = (activeVariant && activeVariant.file_name) || result.fileName || `${folderName}.${result.format || 'tif'}`;
+        currentPreviewFile = fileName.startsWith('data/') ? fileName : `data/result/${fileName}`;
 
         // Cập nhật ma trận biến đổi của từng layer vào ProjectStore
         if (result.layer_transforms) {
@@ -2283,14 +2570,24 @@
             CanvasEngine.requestRender();
         }
 
-        const dziUrl = `/dzi/${folderName}_dzi/${folderName}.dzi`;
-        const directImageUrl = `/api/image?path=data/result/${fileName}`;
+        const sfx = VARIANT_SUFFIX_MAP[activeVariantId] || '01_goc';
+        const defaultDzi = `/dzi/${folderName}_${sfx}_dzi/${folderName}_${sfx}.dzi`;
+        const dziUrl = (activeVariant && activeVariant.dzi_url) || defaultDzi;
+        const directImageUrl = `/api/image?path=${currentPreviewFile}`;
 
         const mapping = result.outputPixelToWorld || (result.metadata && result.metadata.outputPixelToWorld) || MatrixUtils.identity();
         uiState.outputPixelToWorld = mapping;
         uiState.worldToOutputPixel = MatrixUtils.inverse(mapping) || MatrixUtils.identity();
         initOpenSeadragonViewer(dziUrl, directImageUrl);
-        DOM.saveBtnText.textContent = `Save Output (${fileName})`;
+
+        const label = activeVariant ? activeVariant.label : 'Gốc';
+        if (DOM.btnSaveOutputText) {
+            DOM.btnSaveOutputText.textContent = `Xuất ${label}`;
+        }
+        if (DOM.saveBtnText) {
+            DOM.saveBtnText.textContent = `Xuất ${label}`;
+        }
+        renderVariantBadges();
     }
 
     function initOpenSeadragonViewer(dziUrl, fallbackImageUrl) {
@@ -2381,12 +2678,43 @@
             }
         });
 
-        uiState.osdViewer.addHandler('open-failed', function() {
-            if (fallbackImageUrl && uiState.osdViewer) {
+        uiState.osdViewer.addHandler('open-failed', function(event) {
+            console.warn('[OSD] open-failed on source:', uiState.osdSourceKey, event);
+            // 1. Thử fallback legacy DZI (bỏ suffix _01_goc, etc.)
+            const currentSrc = String(uiState.osdSourceKey || '');
+            if (currentSrc.includes('_dzi') && /_(?:0[1-8]_[a-z0-9_]+)_dzi/i.test(currentSrc)) {
+                const legacyDzi = currentSrc
+                    .replace(/_(?:0[1-8]_[a-z0-9_]+)_dzi/i, '_dzi')
+                    .replace(/_(?:0[1-8]_[a-z0-9_]+)\.dzi/i, '.dzi');
+                if (legacyDzi !== currentSrc) {
+                    console.info('[OSD] Retrying with legacy DZI path:', legacyDzi);
+                    uiState.osdSourceKey = legacyDzi;
+                    uiState.osdViewer.open(legacyDzi);
+                    return;
+                }
+            }
+            // 2. Thử fallback direct image
+            if (fallbackImageUrl && uiState.osdViewer && uiState.osdSourceKey !== fallbackImageUrl) {
+                console.info('[OSD] Retrying with direct image fallback:', fallbackImageUrl);
+                uiState.osdSourceKey = fallbackImageUrl;
                 uiState.osdViewer.open({
                     type: 'image',
                     url: fallbackImageUrl
                 });
+                return;
+            }
+            // 3. Thử direct image bỏ suffix
+            if (fallbackImageUrl && /_(?:0[1-8]_[a-z0-9_]+)\./i.test(fallbackImageUrl)) {
+                const legacyImg = fallbackImageUrl.replace(/_(?:0[1-8]_[a-z0-9_]+)\./i, '.');
+                if (legacyImg !== fallbackImageUrl && uiState.osdSourceKey !== legacyImg) {
+                    console.info('[OSD] Retrying with legacy direct image:', legacyImg);
+                    uiState.osdSourceKey = legacyImg;
+                    uiState.osdViewer.open({
+                        type: 'image',
+                        url: legacyImg
+                    });
+                    return;
+                }
             }
             updateOsdControls(false);
         });
@@ -2771,8 +3099,9 @@
         DOM.btnRunStitching.addEventListener('click', handleMainActionButton);
 
         // Nút Lưu kết quả vào thư mục đích -> Unlock Save Modal Dialog
-        if (DOM.btnSaveOutput) DOM.btnSaveOutput.addEventListener('click', openSaveModal);
-        if (DOM.btnSaveTrigger) DOM.btnSaveTrigger.addEventListener('click', openSaveModal);
+        if (DOM.btnSaveOutput) DOM.btnSaveOutput.addEventListener('click', () => openSaveModal('current'));
+        if (DOM.btnSaveTrigger) DOM.btnSaveTrigger.addEventListener('click', () => openSaveModal('current'));
+        if (DOM.btnExportAllVariants) DOM.btnExportAllVariants.addEventListener('click', () => openSaveModal('all'));
 
         // Save Modal Listeners
         if (DOM.btnCloseSaveModal) DOM.btnCloseSaveModal.addEventListener('click', closeSaveModal);
@@ -2780,9 +3109,26 @@
         if (DOM.btnConfirmSave) DOM.btnConfirmSave.addEventListener('click', handleConfirmSave);
         if (DOM.btnDirectBrowserDownload) DOM.btnDirectBrowserDownload.addEventListener('click', handleDirectBrowserDownload);
 
+        if (DOM.radioExportCurrent) DOM.radioExportCurrent.addEventListener('change', () => {
+            updateModalStorageEstimate();
+            updateModalPreviewPath();
+        });
+        if (DOM.radioExportAll) DOM.radioExportAll.addEventListener('change', () => {
+            updateModalStorageEstimate();
+            updateModalPreviewPath();
+        });
+
         if (DOM.modalInputFileName) DOM.modalInputFileName.addEventListener('input', updateModalPreviewPath);
         if (DOM.modalSelectFormat) DOM.modalSelectFormat.addEventListener('change', updateModalPreviewPath);
         if (DOM.modalInputTargetDir) DOM.modalInputTargetDir.addEventListener('input', updateModalPreviewPath);
+
+        // 8-Variant Tab Buttons Listeners
+        document.querySelectorAll('.variant-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const variantId = btn.dataset.variant;
+                if (variantId) switchVariantTab(variantId);
+            });
+        });
 
         initProgressPanelResize();
 
@@ -2945,6 +3291,19 @@
                 CanvasEngine.requestRender();
             });
         }
+        if (DOM.btnCopyFocusFromOriginal) {
+            DOM.btnCopyFocusFromOriginal.addEventListener('click', () => {
+                const ok = ProjectStore.copyFocusRegionsFrom('original');
+                if (ok) {
+                    renderFocusRegionsList();
+                    updateOsdFocusOverlays();
+                    renderVariantBadges();
+                    showToast('Đã sao chép các vùng nét từ bản Gốc sang biến thể này!', 'success');
+                } else {
+                    showToast('Bản Gốc chưa có vùng nét nào để sao chép', 'warning');
+                }
+            });
+        }
 
         if (DOM.btnBatchApplyLayer) DOM.btnBatchApplyLayer.addEventListener('click', () => {
             if (DOM.batchFocusLayerSelect.value) ProjectStore.setLayerForSelectedFocusRegions(DOM.batchFocusLayerSelect.value);
@@ -3063,6 +3422,7 @@
             renderExclusionStrokesList();
             CanvasEngine.requestRender();
             renderOsdDrawingDraft();
+            renderVariantBadges();
             saveCurrentSession();
             updateHistoryControls();
             if (changeType === 'autosaveConflict') {

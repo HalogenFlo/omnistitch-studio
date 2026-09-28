@@ -57,7 +57,7 @@ stitching_task = {
     "error": None
 }
 stitching_task_lock = threading.RLock()
-MAX_JSON_REQUEST_BYTES = 4 * 1024 * 1024
+MAX_JSON_REQUEST_BYTES = 64 * 1024 * 1024
 MAX_UPLOAD_REQUEST_BYTES = 256 * 1024 * 1024
 MAX_UPLOAD_DECODED_BYTES = 128 * 1024 * 1024
 IMAGE_EXTENSIONS = ('.tif', '.tiff', '.jpg', '.jpeg', '.png', '.bmp')
@@ -416,6 +416,18 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
             abs_path = _contained_path(OUTPUTS_DIR, fallback)
 
         if not os.path.exists(abs_path):
+            import re
+            cand_stripped = re.sub(r'_(?:0[1-8]_[a-zA-Z0-9_]+)(\.[a-zA-Z0-9]+)$', r'\1', abs_path)
+            if cand_stripped != abs_path and os.path.isfile(cand_stripped):
+                abs_path = cand_stripped
+            else:
+                dirname, fname = os.path.split(abs_path)
+                stem, ext = os.path.splitext(fname)
+                cand_goc = os.path.join(dirname, f"{stem}_01_goc{ext}")
+                if os.path.isfile(cand_goc):
+                    abs_path = cand_goc
+
+        if not os.path.exists(abs_path):
             self.send_error(404, "Image Not Found")
             return
 
@@ -445,6 +457,18 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
         except (ValueError, OSError):
             self.send_error(403, "Image path outside approved data directories")
             return
+
+        if not os.path.isfile(abs_path):
+            import re
+            cand_stripped = re.sub(r'_(?:0[1-8]_[a-zA-Z0-9_]+)(\.[a-zA-Z0-9]+)$', r'\1', abs_path)
+            if cand_stripped != abs_path and os.path.isfile(cand_stripped) and _is_allowed_image_path(cand_stripped):
+                abs_path = cand_stripped
+            else:
+                dirname, fname = os.path.split(abs_path)
+                stem, ext = os.path.splitext(fname)
+                cand_goc = os.path.join(dirname, f"{stem}_01_goc{ext}")
+                if os.path.isfile(cand_goc) and _is_allowed_image_path(cand_goc):
+                    abs_path = cand_goc
 
         if not os.path.isfile(abs_path):
             self.send_error(404, "Image Not Found")
@@ -552,6 +576,38 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 alt_path = ""
             if alt_path and os.path.exists(alt_path):
                 target_path = alt_path
+
+        # Thử 3: Fallback nếu rel có suffix variant (_01_goc, _02_goc_canmau, ...) nhưng trên đĩa chỉ có thư mục gốc không suffix
+        if not os.path.exists(target_path) or os.path.isdir(target_path):
+            import re
+            rel_stripped = re.sub(r'_(?:0[1-8]_[a-zA-Z0-9_]+)(?=_dzi|\.dzi|_files)', '', rel)
+            if rel_stripped != rel:
+                for base_dir in [OUTPUTS_DIR, os.path.join(WORKSPACE_DIR, "data", "output")]:
+                    try:
+                        cand = _contained_path(base_dir, os.path.join(base_dir, rel_stripped))
+                        if os.path.isfile(cand):
+                            target_path = cand
+                            break
+                    except ValueError:
+                        pass
+
+        # Thử 4: Fallback nếu rel không có suffix nhưng trên đĩa có suffix _01_goc
+        if not os.path.exists(target_path) or os.path.isdir(target_path):
+            parts = rel.split('/', 1)
+            folder_part = parts[0]
+            rest_part = parts[1] if len(parts) > 1 else ""
+            if folder_part.endswith("_dzi") and not any(f"_{sfx:02d}_" in folder_part for sfx in range(1, 9)):
+                base_name = folder_part[:-4]
+                v_name = f"{base_name}_01_goc"
+                v_rel = f"{v_name}_dzi/" + (rest_part.replace(f"{base_name}.", f"{v_name}.").replace(f"{base_name}_files", f"{v_name}_files"))
+                for base_dir in [OUTPUTS_DIR, os.path.join(WORKSPACE_DIR, "data", "output")]:
+                    try:
+                        cand = _contained_path(base_dir, os.path.join(base_dir, v_rel))
+                        if os.path.isfile(cand):
+                            target_path = cand
+                            break
+                    except ValueError:
+                        pass
 
         if not os.path.exists(target_path) or os.path.isdir(target_path):
             self.send_error(404, f"DZI Tile Not Found: {rel}")
@@ -925,7 +981,9 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                         output_name=proj.folderName or proj_id,
                         export_format=data.get("exportFormat") or "tif",
                         background_mode=data.get("backgroundMode") or "white",
-                        progress_callback=update_progress
+                        progress_callback=update_progress,
+                        variant_id=data.get("variantId"),
+                        export_all=bool(data.get("exportAll", False))
                     )
                     with stitching_task_lock:
                         stitching_task["is_running"] = False

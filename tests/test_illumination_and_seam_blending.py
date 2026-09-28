@@ -111,7 +111,66 @@ class TestIlluminationAndSeamBlending(unittest.TestCase):
         diff_clar = abs(float(res_clar[50, 50, 0]) - float(res_clar[50, 70, 0]))
         self.assertGreaterEqual(diff_clar, diff_norm, "Bộ lọc rõ nét phải tăng hoặc bảo toàn tương phản vi thể nhân tế bào")
 
+    def test_kiet_tissue_specific_overlap_gains(self):
+        """Kiểm tra: Thuật toán cân màu mô học Least Squares từ kietlearntocode/stitch."""
+        from backend.blending import get_tissue_mask, solve_tissue_specific_gains
+
+        # Tạo ảnh có vùng mô và vùng lam kính
+        tile0 = np.full((100, 100, 3), 240, dtype=np.uint8) # Lam kính sáng
+        tile0[20:80, 20:80] = [80, 70, 90] # Mô tối hơn ở tile 0
+
+        tile1 = np.full((100, 100, 3), 240, dtype=np.uint8) # Lam kính sáng
+        tile1[20:80, 20:80] = [120, 105, 135] # Mô sáng hơn 50% ở tile 1
+
+        mask0 = get_tissue_mask(tile0)
+        self.assertEqual(mask0[50, 50], 1)
+        self.assertEqual(mask0[5, 5], 0)
+
+        images = {0: tile0, 1: tile1}
+        transforms = {
+            0: np.eye(3, dtype=np.float64),
+            1: np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+        }
+        gains = solve_tissue_specific_gains(images, transforms, 150, 100)
+        self.assertIn(0, gains)
+        self.assertIn(1, gains)
+        # Tile 0 tối hơn nên gain phải lớn hơn tile 1
+        self.assertGreater(float(gains[0][0]), float(gains[1][0]))
+
+    def test_kiet_defringe_filter(self):
+        """Kiểm tra: Bộ lọc quang sai sắc (Defringe) từ kietlearntocode/stitch."""
+        from backend.blending import apply_defringe_filter
+
+        # Điểm ảnh bình thường (không có quang sai): Blue ~ Red ~ Green
+        normal_pixel = np.array([[[120, 110, 115]]], dtype=np.uint8)
+        self.assertEqual(apply_defringe_filter(normal_pixel)[0, 0, 2], 115)
+
+        # Điểm ảnh viền quang sai màu xanh dương bất thường (Blue 210, Red 100, Green 100)
+        fringe_pixel = np.array([[[100, 100, 210]]], dtype=np.uint8)
+        cleaned = apply_defringe_filter(fringe_pixel, threshold=12, min_blue=50)
+        self.assertEqual(cleaned[0, 0, 2], 100, "Kênh Blue phải được cắt giảm về max(Red, Green)")
+
+    def test_blender_dual_output_base_and_balanced(self):
+        """Kiểm tra: FastStreamingBlender tạo song song cả panorama_goc và panorama_balanced trong một lượt."""
+        blender = FastStreamingBlender((120, 160), background_mode='white', focus_stacking=False, compute_balanced=True)
+
+        tile0 = np.full((100, 100, 3), 100, dtype=np.uint8)
+        H0 = np.eye(3, dtype=np.float64)
+        gain0 = np.array([1.2, 1.2, 1.2], dtype=np.float32)
+
+        blender.accumulate_tile(tile0, H0, tile_gain=gain0)
+        res_goc, res_bal, mask = blender.finalize()
+
+        self.assertEqual(res_goc.shape[:2], (120, 160))
+        self.assertEqual(res_bal.shape[:2], (120, 160))
+        self.assertEqual(mask.shape[:2], (120, 160))
+
+        # Điểm ảnh ở tâm tile0: ảnh gốc là 100, ảnh cân màu là 100 * 1.2 = 120
+        self.assertEqual(res_goc[50, 50, 0], 100)
+        self.assertEqual(res_bal[50, 50, 0], 120)
+
 
 if __name__ == '__main__':
     unittest.main()
+
 

@@ -61,10 +61,16 @@
                     <span id="btnStitchText">Stitch Preview</span>
                 </button>
 
-                <!-- Save Output Button -->
-                <button class="btn btn-success" id="btnSaveOutput" style="display: none;">
+                <!-- Save Output Button (Xuất phiên bản hiện tại) -->
+                <button class="btn btn-success" id="btnSaveOutput" style="display: none;" title="Chỉ dựng lại phiên bản đang mở với Focus Region, Mask và Crop riêng">
                     <i class="fa-solid fa-floppy-disk"></i>
-                    <span>Save Output</span>
+                    <span id="btnSaveOutputText">Xuất phiên bản hiện tại</span>
+                </button>
+
+                <!-- Export All 8 Variants Button (Xuất lại cả 8) -->
+                <button class="btn btn-outline-cyan" id="btnExportAllVariants" style="display: none;" title="Dựng lần lượt 8 workspace độc lập và xuất đủ 8 file + 8 DZI">
+                    <i class="fa-solid fa-cubes-stacked"></i>
+                    <span>Xuất lại cả 8</span>
                 </button>
             </div>
         </header>
@@ -327,8 +333,11 @@
                     </div>
 
                     <div class="result-actions" id="resultActions" style="display: none;">
-                        <button class="btn btn-sm btn-success" id="btnSaveTrigger">
-                            <i class="fa-solid fa-floppy-disk"></i> <span id="saveBtnText">Save to Destination</span>
+                        <button class="btn btn-sm btn-success" id="btnSaveTrigger" title="Xuất lại phiên bản hiện đang mở">
+                            <i class="fa-solid fa-floppy-disk"></i> <span id="saveBtnText">Xuất bản hiện tại</span>
+                        </button>
+                        <button class="btn btn-sm btn-primary" id="btnExportAllTrigger" title="Dựng tuần tự toàn bộ 8 workspace độc lập">
+                            <i class="fa-solid fa-layer-group"></i> <span>Xuất lại cả 8</span>
                         </button>
                         <button class="btn btn-sm btn-outline" id="btnResetViewer" title="Center view">
                             <i class="fa-solid fa-arrows-to-dot"></i> Fit View
@@ -342,8 +351,8 @@
                         <button class="btn-sm" id="btnOsdFit" title="Fit entire slide">Fit</button>
                         <button class="btn-sm" id="btnOsdOneToOne" title="One pixel per screen pixel">1:1</button>
                         <button class="btn-sm" id="btnOsdReset" title="Reset default view">Reset</button>
-                        <button class="btn-sm active" id="btnToggleGaussian" title="Bật/Tắt cân bằng trường sáng Gaussian"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="lblGaussian">Gaussian: ON</span></button>
-                        <button class="btn-sm" id="btnToggleClarify" title="Bật/Tắt làm rõ nét vi thể tế bào (Cellular Clarity)"><i class="fa-solid fa-bolt"></i> <span id="lblClarify">Rõ nét: OFF</span></button>
+                        <button class="btn-sm active" id="btnToggleGaussian" title="Bật/Tắt cân bằng trường sáng Gaussian" style="display: none;"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="lblGaussian">Gaussian: ON</span></button>
+                        <button class="btn-sm" id="btnToggleClarify" title="Bật/Tắt làm rõ nét vi thể tế bào (Cellular Clarity)" style="display: none;"><i class="fa-solid fa-bolt"></i> <span id="lblClarify">Rõ nét: OFF</span></button>
                         <span class="zoom-indicator" id="osdZoomIndicator">--</span>
                     </div>
 
@@ -353,6 +362,53 @@
                             <i class="fa-solid fa-crosshairs"></i>
                             <span id="inspectModeToggleText">Clarity Inspector: <b>OFF</b></span>
                         </button>
+                    </div>
+                </div>
+
+                <!-- 8-Variant Tabs Bar: Nhóm Gốc & Nhóm Gaussian -->
+                <div class="variant-tabs-bar" id="variantTabsBar" style="display: none;">
+                    <div class="variant-group variant-group-original">
+                        <span class="variant-group-tag"><i class="fa-solid fa-image"></i> NHÓM GỐC</span>
+                        <div class="variant-tab-buttons">
+                            <button class="variant-tab-btn active" data-variant="original" id="vtab-original" title="Panorama gốc, không hậu xử lý">
+                                <span class="vtab-text">Gốc</span>
+                                <span class="vtab-badge" id="vbadge-original"></span>
+                            </button>
+                            <button class="variant-tab-btn" data-variant="original_balanced" id="vtab-original_balanced" title="Cân màu/phơi sáng nhẹ sau ghép">
+                                <span class="vtab-text">Gốc+Cân màu</span>
+                                <span class="vtab-badge" id="vbadge-original_balanced"></span>
+                            </button>
+                            <button class="variant-tab-btn" data-variant="original_clarity" id="vtab-original_clarity" title="Cellular Clarity làm rõ nét vi thể tế bào">
+                                <span class="vtab-text">Gốc+Nét</span>
+                                <span class="vtab-badge" id="vbadge-original_clarity"></span>
+                            </button>
+                            <button class="variant-tab-btn" data-variant="original_full" id="vtab-original_full" title="Cân màu và Cellular Clarity">
+                                <span class="vtab-text">Gốc+Full</span>
+                                <span class="vtab-badge" id="vbadge-original_full"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="variant-group-divider"></div>
+                    <div class="variant-group variant-group-gaussian">
+                        <span class="variant-group-tag"><i class="fa-solid fa-wand-magic-sparkles"></i> NHÓM GAUSSIAN</span>
+                        <div class="variant-tab-buttons">
+                            <button class="variant-tab-btn" data-variant="gaussian" id="vtab-gaussian" title="Cân trường sáng Gaussian sau ghép">
+                                <span class="vtab-text">Gaussian</span>
+                                <span class="vtab-badge" id="vbadge-gaussian"></span>
+                            </button>
+                            <button class="variant-tab-btn" data-variant="gaussian_balanced" id="vtab-gaussian_balanced" title="Gaussian và cân màu">
+                                <span class="vtab-text">Gaussian+Cân màu</span>
+                                <span class="vtab-badge" id="vbadge-gaussian_balanced"></span>
+                            </button>
+                            <button class="variant-tab-btn" data-variant="gaussian_clarity" id="vtab-gaussian_clarity" title="Gaussian và Cellular Clarity">
+                                <span class="vtab-text">Gaussian+Nét</span>
+                                <span class="vtab-badge" id="vbadge-gaussian_clarity"></span>
+                            </button>
+                            <button class="variant-tab-btn" data-variant="gaussian_full" id="vtab-gaussian_full" title="Gaussian, cân màu và Cellular Clarity">
+                                <span class="vtab-text">Gaussian+Full</span>
+                                <span class="vtab-badge" id="vbadge-gaussian_full"></span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -537,8 +593,11 @@
                 <!-- Applied Focus Regions Section -->
                 <div class="focus-regions-section" id="focusRegionsSection">
                     <div class="focus-regions-header">
-                        <span class="section-subtitle"><i class="fa-solid fa-star text-warning"></i> Applied Focus Regions (<span id="focusRegionCount">0</span>):</span>
-                        <button class="btn-xs text-danger" id="btnClearAllFocusRegions" title="Clear all focus regions"><i class="fa-solid fa-trash"></i> Clear All</button>
+                        <span class="section-subtitle"><i class="fa-solid fa-star text-warning"></i> Applied Focus Regions · <span id="currentVariantBadgeText" style="color: #38bdf8; font-weight: 600;">Gốc</span> (<span id="focusRegionCount">0</span>):</span>
+                        <div style="display: flex; gap: 4px;">
+                            <button class="btn-xs text-cyan" id="btnCopyFocusFromOriginal" style="display: none; padding: 2px 6px; font-size: 11px;" title="Sao chép các vùng nét từ bản Gốc sang biến thể này"><i class="fa-solid fa-copy"></i> Chép từ Gốc</button>
+                            <button class="btn-xs text-danger" id="btnClearAllFocusRegions" title="Clear all focus regions"><i class="fa-solid fa-trash"></i> Clear All</button>
+                        </div>
                     </div>
                     <div class="focus-regions-list" id="focusRegionsList">
                         <div class="empty-hint">No focus regions applied yet</div>
@@ -621,6 +680,29 @@
                         <input type="text" id="modalInputTargetDir" class="form-input" value="data/result" placeholder="e.g., data/result or D:/ExportedMosaics">
                     </div>
                     <span class="form-hint">You can enter any valid directory path on your storage drive.</span>
+                </div>
+
+                <!-- Export Scope: Single variant vs All 8 variants -->
+                <div class="form-group">
+                    <label class="form-label"><i class="fa-solid fa-layer-group"></i> Phạm vi xuất:</label>
+                    <div class="export-scope-options" style="display: flex; gap: 0.8rem; margin-top: 0.2rem; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; cursor: pointer; color: var(--text-primary);">
+                            <input type="radio" name="exportScope" id="radioExportCurrent" value="current" checked>
+                            <span>Chỉ phiên bản hiện tại (<b id="modalActiveVariantLabel" style="color: #38bdf8;">Gốc</b>)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; cursor: pointer; color: var(--text-primary);">
+                            <input type="radio" name="exportScope" id="radioExportAll" value="all">
+                            <span>Xuất lại cả 8 biến thể (8 workspace riêng)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Storage Estimate Banner -->
+                <div class="output-preview-banner mt-2" id="modalStorageEstimateBanner">
+                    <div class="banner-item">
+                        <span class="label"><i class="fa-solid fa-hard-drive"></i> Dự toán dung lượng:</span>
+                        <span class="val highlight" id="modalStorageEstimateText">~120 MB (1 file TIFF + DZI)</span>
+                    </div>
                 </div>
 
                 <!-- Destination Preview -->

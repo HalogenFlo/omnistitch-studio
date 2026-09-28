@@ -4,6 +4,11 @@
  * Path: tool/image_alignment/frontend/project_store.js
  */
 
+const ALL_VARIANT_IDS = [
+    'original', 'original_balanced', 'original_clarity', 'original_full',
+    'gaussian', 'gaussian_balanced', 'gaussian_clarity', 'gaussian_full'
+];
+
 const ProjectStore = (function () {
     'use strict';
 
@@ -23,6 +28,23 @@ const ProjectStore = (function () {
             this.maxAutosaveRetries = 5;
         }
 
+        createEmptyVariantWorkspaces() {
+            const ws = {};
+            ALL_VARIANT_IDS.forEach(vid => {
+                ws[vid] = {
+                    focusRegions: [],
+                    maskRegions: [],
+                    cropRegion: null,
+                    cropDraft: null,
+                    cropSettings: { trimOutputBounds: true, aspectRatio: null, paddingWorld: 0 },
+                    regionGroups: [],
+                    historyJournal: [],
+                    historyCursor: 0
+                };
+            });
+            return ws;
+        }
+
         createDefaultState() {
             return {
                 id: 'default_project',
@@ -39,6 +61,8 @@ const ProjectStore = (function () {
                 selection: [], // array of selected layer IDs
                 folderName: '',
                 updatedAt: new Date().toISOString(),
+                activeVariantId: 'original',
+                variantWorkspaces: this.createEmptyVariantWorkspaces(),
                 focusRegions: [], // FocusRegion items
                 maskRegions: [],  // MaskRegion items (erase / restore brush)
                 cropRegion: null, // Committed CropRegion
@@ -60,11 +84,65 @@ const ProjectStore = (function () {
         }
 
         notify(changeType) {
+            this.syncCurrentToVariantWorkspace();
             this.state.updatedAt = new Date().toISOString();
             this.listeners.forEach(cb => {
                 try { cb(this.state, changeType); } catch (e) { console.error('Store observer error:', e); }
             });
             this.scheduleAutosave();
+        }
+
+        syncCurrentToVariantWorkspace() {
+            if (!this.state.variantWorkspaces) {
+                this.state.variantWorkspaces = this.createEmptyVariantWorkspaces();
+            }
+            const activeId = this.state.activeVariantId || 'original';
+            this.state.variantWorkspaces[activeId] = {
+                focusRegions: JSON.parse(JSON.stringify(this.state.focusRegions || [])),
+                maskRegions: JSON.parse(JSON.stringify(this.state.maskRegions || [])),
+                cropRegion: this.state.cropRegion ? JSON.parse(JSON.stringify(this.state.cropRegion)) : null,
+                cropDraft: this.state.cropDraft ? JSON.parse(JSON.stringify(this.state.cropDraft)) : null,
+                cropSettings: JSON.parse(JSON.stringify(this.state.cropSettings || {})),
+                regionGroups: JSON.parse(JSON.stringify(this.state.regionGroups || [])),
+                historyJournal: JSON.parse(JSON.stringify(this.state.historyJournal || [])),
+                historyCursor: Number(this.state.historyCursor || 0)
+            };
+        }
+
+        switchVariant(newVariantId) {
+            if (!ALL_VARIANT_IDS.includes(newVariantId)) return false;
+            if (this.state.activeVariantId === newVariantId) return true;
+
+            // 1. Lưu workspace hiện tại
+            this.syncCurrentToVariantWorkspace();
+
+            // 2. Chuyển variant ID
+            this.state.activeVariantId = newVariantId;
+
+            // 3. Khôi phục workspace mới
+            const ws = this.state.variantWorkspaces[newVariantId] || {
+                focusRegions: [],
+                maskRegions: [],
+                cropRegion: null,
+                cropDraft: null,
+                cropSettings: { trimOutputBounds: true, aspectRatio: null, paddingWorld: 0 },
+                regionGroups: [],
+                historyJournal: [],
+                historyCursor: 0
+            };
+
+            this.state.focusRegions = JSON.parse(JSON.stringify(ws.focusRegions || []));
+            this.state.maskRegions = JSON.parse(JSON.stringify(ws.maskRegions || []));
+            this.state.cropRegion = ws.cropRegion ? JSON.parse(JSON.stringify(ws.cropRegion)) : null;
+            this.state.cropDraft = ws.cropDraft ? JSON.parse(JSON.stringify(ws.cropDraft)) : null;
+            this.state.cropSettings = Object.assign({ trimOutputBounds: true, aspectRatio: null, paddingWorld: 0 }, ws.cropSettings || {});
+            this.state.regionGroups = JSON.parse(JSON.stringify(ws.regionGroups || []));
+            this.state.historyJournal = JSON.parse(JSON.stringify(ws.historyJournal || []));
+            this.state.historyCursor = Number(ws.historyCursor || 0);
+
+            this.selectedRegionIds = [];
+            this.notify('variantSwitch');
+            return true;
         }
 
         loadState(newState) {
@@ -84,80 +162,99 @@ const ProjectStore = (function () {
             this.state.selection = Array.isArray(raw.selection) ? raw.selection : [];
             this.state.folderName = raw.folderName || '';
             this.state.updatedAt = raw.updatedAt || new Date().toISOString();
+            this.state.activeVariantId = ALL_VARIANT_IDS.includes(raw.activeVariantId) ? raw.activeVariantId : 'original';
 
-            // Migrate FocusRegions
-            this.state.focusRegions = (raw.focusRegions || []).map(fr => {
-                let pts = fr.pointsWorld || [];
-                if ((!pts || pts.length === 0) && fr.worldRect) {
-                    const [rx, ry, rw, rh] = fr.worldRect;
-                    pts = [[rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh]];
-                }
-                const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-                const minX = xs.length ? Math.min(...xs) : 0, minY = ys.length ? Math.min(...ys) : 0;
-                const maxX = xs.length ? Math.max(...xs) : 0, maxY = ys.length ? Math.max(...ys) : 0;
-                return {
-                    id: fr.id || ('fr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
-                    shapeType: fr.shapeType || 'rectangle',
-                    pointsWorld: pts,
-                    selectedLayerId: fr.selectedLayerId || null,
-                    featherWorldPx: Number(fr.featherWorldPx || fr.featherPx || 8),
-                    featherPx: Number(fr.featherWorldPx || fr.featherPx || 8),
-                    order: Number(fr.order || 0),
-                    locked: Boolean(fr.locked),
-                    geometryRevision: Number(fr.geometryRevision || 1),
-                    boundingRect: [minX, minY, maxX - minX, maxY - minY],
-                    createdAt: fr.createdAt || new Date().toISOString(),
-                    updatedAt: fr.updatedAt || fr.createdAt || new Date().toISOString()
-                };
-            });
-
-            // Migrate MaskRegions from exclusionStrokes if present
-            const rawMasks = raw.maskRegions || raw.exclusionStrokes || [];
-            this.state.maskRegions = rawMasks.map((mr, idx) => {
-                const pts = mr.pointsWorld || [];
-                const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-                const minX = xs.length ? Math.min(...xs) : 0, minY = ys.length ? Math.min(...ys) : 0;
-                const maxX = xs.length ? Math.max(...xs) : 0, maxY = ys.length ? Math.max(...ys) : 0;
-                return {
-                    id: mr.id || ('mask_' + Date.now() + '_' + idx),
-                    shapeType: mr.shapeType || 'brush',
-                    pointsWorld: pts,
-                    radiusWorld: Number(mr.radiusWorld || 20),
-                    operation: mr.operation === 'restore' ? 'restore' : 'exclude',
-                    order: Number(mr.order !== undefined ? mr.order : idx),
-                    locked: Boolean(mr.locked),
-                    boundingRect: [minX, minY, maxX - minX, maxY - minY],
-                    createdAt: mr.createdAt || new Date().toISOString(),
-                    updatedAt: mr.updatedAt || mr.createdAt || new Date().toISOString()
-                };
-            });
-
-            // Migrate CropRegion from keepRegion if present
-            const rawCrop = raw.cropRegion || raw.keepRegion;
-            if (rawCrop && rawCrop.pointsWorld && rawCrop.pointsWorld.length >= 3) {
-                const pts = rawCrop.pointsWorld;
-                const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-                const minX = Math.min(...xs), minY = Math.min(...ys);
-                const maxX = Math.max(...xs), maxY = Math.max(...ys);
-                this.state.cropRegion = {
-                    id: rawCrop.id || 'crop_main',
-                    shapeType: rawCrop.shapeType || 'rectangle',
-                    pointsWorld: pts,
-                    locked: Boolean(rawCrop.locked),
-                    boundingRect: [minX, minY, maxX - minX, maxY - minY],
-                    updatedAt: rawCrop.updatedAt || new Date().toISOString()
-                };
+            // Khởi tạo và nạp 8 variant workspaces
+            this.state.variantWorkspaces = this.createEmptyVariantWorkspaces();
+            if (raw.variantWorkspaces && typeof raw.variantWorkspaces === 'object') {
+                ALL_VARIANT_IDS.forEach(vid => {
+                    if (raw.variantWorkspaces[vid]) {
+                        this.state.variantWorkspaces[vid] = raw.variantWorkspaces[vid];
+                    }
+                });
             } else {
-                this.state.cropRegion = null;
+                // Di trú dữ liệu legacy vào workspace 'original'
+                const legacyFocus = (raw.focusRegions || []).map(fr => {
+                    let pts = fr.pointsWorld || [];
+                    if ((!pts || pts.length === 0) && fr.worldRect) {
+                        const [rx, ry, rw, rh] = fr.worldRect;
+                        pts = [[rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh]];
+                    }
+                    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+                    const minX = xs.length ? Math.min(...xs) : 0, minY = ys.length ? Math.min(...ys) : 0;
+                    const maxX = xs.length ? Math.max(...xs) : 0, maxY = ys.length ? Math.max(...ys) : 0;
+                    return {
+                        id: fr.id || ('fr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
+                        shapeType: fr.shapeType || 'rectangle',
+                        pointsWorld: pts,
+                        selectedLayerId: fr.selectedLayerId || null,
+                        featherWorldPx: Number(fr.featherWorldPx || fr.featherPx || 8),
+                        featherPx: Number(fr.featherWorldPx || fr.featherPx || 8),
+                        order: Number(fr.order || 0),
+                        locked: Boolean(fr.locked),
+                        geometryRevision: Number(fr.geometryRevision || 1),
+                        boundingRect: [minX, minY, maxX - minX, maxY - minY],
+                        createdAt: fr.createdAt || new Date().toISOString(),
+                        updatedAt: fr.updatedAt || fr.createdAt || new Date().toISOString()
+                    };
+                });
+                const rawMasks = raw.maskRegions || raw.exclusionStrokes || [];
+                const legacyMasks = rawMasks.map((mr, idx) => {
+                    const pts = mr.pointsWorld || [];
+                    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+                    const minX = xs.length ? Math.min(...xs) : 0, minY = ys.length ? Math.min(...ys) : 0;
+                    const maxX = xs.length ? Math.max(...xs) : 0, maxY = ys.length ? Math.max(...ys) : 0;
+                    return {
+                        id: mr.id || ('mask_' + Date.now() + '_' + idx),
+                        shapeType: mr.shapeType || 'brush',
+                        pointsWorld: pts,
+                        radiusWorld: Number(mr.radiusWorld || 20),
+                        operation: mr.operation === 'restore' ? 'restore' : 'exclude',
+                        order: Number(mr.order !== undefined ? mr.order : idx),
+                        locked: Boolean(mr.locked),
+                        boundingRect: [minX, minY, maxX - minX, maxY - minY],
+                        createdAt: mr.createdAt || new Date().toISOString(),
+                        updatedAt: mr.updatedAt || mr.createdAt || new Date().toISOString()
+                    };
+                });
+                const rawCrop = raw.cropRegion || raw.keepRegion;
+                let legacyCrop = null;
+                if (rawCrop && rawCrop.pointsWorld && rawCrop.pointsWorld.length >= 3) {
+                    const pts = rawCrop.pointsWorld;
+                    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+                    legacyCrop = {
+                        id: rawCrop.id || 'crop_main',
+                        shapeType: rawCrop.shapeType || 'rectangle',
+                        pointsWorld: pts,
+                        locked: Boolean(rawCrop.locked),
+                        boundingRect: [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)],
+                        updatedAt: rawCrop.updatedAt || new Date().toISOString()
+                    };
+                }
+                this.state.variantWorkspaces['original'] = {
+                    focusRegions: legacyFocus,
+                    maskRegions: legacyMasks,
+                    cropRegion: legacyCrop,
+                    cropDraft: null,
+                    cropSettings: Object.assign({ trimOutputBounds: true, aspectRatio: null, paddingWorld: 0 }, raw.cropSettings || {}),
+                    regionGroups: Array.isArray(raw.regionGroups) ? raw.regionGroups : [],
+                    historyJournal: Array.isArray(raw.historyJournal) ? raw.historyJournal : [],
+                    historyCursor: raw.historyCursor !== undefined ? Number(raw.historyCursor) : 0
+                };
             }
 
+            // Nạp workspace của active variant vào state chính
+            const curWs = this.state.variantWorkspaces[this.state.activeVariantId] || this.state.variantWorkspaces['original'];
+            this.state.focusRegions = JSON.parse(JSON.stringify(curWs.focusRegions || []));
+            this.state.maskRegions = JSON.parse(JSON.stringify(curWs.maskRegions || []));
+            this.state.cropRegion = curWs.cropRegion ? JSON.parse(JSON.stringify(curWs.cropRegion)) : null;
             this.state.cropDraft = null;
-            this.state.cropSettings = Object.assign({ trimOutputBounds: true, aspectRatio: null, paddingWorld: 0 }, raw.cropSettings || {});
-            this.state.regionGroups = Array.isArray(raw.regionGroups) ? raw.regionGroups : [];
-            this.state.historyJournal = Array.isArray(raw.historyJournal) ? raw.historyJournal : [];
-            this.state.historyCursor = raw.historyCursor === undefined
-                ? this.state.historyJournal.length
-                : Math.max(0, Math.min(Number(raw.historyCursor), this.state.historyJournal.length));
+            this.state.cropSettings = Object.assign({ trimOutputBounds: true, aspectRatio: null, paddingWorld: 0 }, curWs.cropSettings || {});
+            this.state.regionGroups = JSON.parse(JSON.stringify(curWs.regionGroups || []));
+            this.state.historyJournal = JSON.parse(JSON.stringify(curWs.historyJournal || []));
+            this.state.historyCursor = curWs.historyCursor !== undefined
+                ? Math.max(0, Math.min(Number(curWs.historyCursor), this.state.historyJournal.length))
+                : this.state.historyJournal.length;
 
             this.selectedRegionIds = [];
             this.isDirty = false;
@@ -398,6 +495,17 @@ const ProjectStore = (function () {
             this.state.focusRegions = this.state.focusRegions.filter(region => region.locked);
             tx.commit();
             this.notify('focusRegions');
+        }
+
+        copyFocusRegionsFrom(sourceVariantId = 'original') {
+            const ws = this.state.variantWorkspaces || {};
+            const srcWs = ws[sourceVariantId];
+            if (!srcWs || !srcWs.focusRegions || srcWs.focusRegions.length === 0) return false;
+            const tx = this.pushHistory(`Sao chép vùng nét từ ${sourceVariantId}`, 'focus_copy');
+            this.state.focusRegions = JSON.parse(JSON.stringify(srcWs.focusRegions));
+            tx.commit();
+            this.notify('focusRegions');
+            return true;
         }
 
         // ======================================================
@@ -802,6 +910,7 @@ const ProjectStore = (function () {
 
         async flushAutosave() {
             if (this.saveInFlight || !this.saveQueued) return false;
+            this.syncCurrentToVariantWorkspace();
             this.saveInFlight = true;
             this.saveQueued = false;
             const generation = this.saveGeneration;
