@@ -634,13 +634,18 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 base_name = dzi_folder[:-4] if dzi_folder.endswith('_dzi') else dzi_folder
                 case_code = extract_case_code(base_name)
                 is_tho = "THO" in base_name.upper()
-                type_folder = f"{case_code}goc" if is_tho else f"{case_code}mau"
+                type_folders = [f"{case_code}tho", f"{case_code}goc"] if is_tho else [f"{case_code}mau"]
                 match_sub = re.search(r"[-_]([A-Za-z])$", base_name)
                 sub_label = match_sub.group(1).upper() if match_sub else "A"
                 for sub in ["4X", "10X", ""]:
-                    cand_hier = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", "batch_stitched", sub, case_code, type_folder, sub_label, rel))
-                    if os.path.exists(cand_hier):
-                        alt_path = cand_hier
+                    found = False
+                    for tf in type_folders:
+                        cand_hier = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", "batch_stitched", sub, case_code, tf, sub_label, rel))
+                        if os.path.exists(cand_hier):
+                            alt_path = cand_hier
+                            found = True
+                            break
+                    if found:
                         break
                     cand = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", "batch_stitched", sub, case_code, rel))
                     if os.path.exists(cand):
