@@ -910,10 +910,11 @@ def blend_multiband_voronoi(images, tile_gains, adjusted_transforms, canvas_w, c
     """
     Hòa trộn multiband Voronoi (Wrapper tương thích ngược sử dụng FastStreamingBlender).
     """
-    blender = FastStreamingBlender(canvas_w, canvas_h, background_mode=background_mode)
+    blender = FastStreamingBlender((canvas_h, canvas_w), background_mode=background_mode)
     indices = sorted([i for i in images if i in adjusted_transforms and images[i] is not None])
     for idx in indices:
-        blender.blend_tile(images[idx], adjusted_transforms[idx], idx)
+        gain = tile_gains.get(idx) if tile_gains else None
+        blender.accumulate_tile(images[idx], adjusted_transforms[idx], tile_gain=gain)
     result = blender.finalize()
     if isinstance(result, tuple) and len(result) >= 2:
         return result[0], result[-1]

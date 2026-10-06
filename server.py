@@ -5,6 +5,7 @@
 
 import os
 import sys
+import re
 import json
 import base64
 import threading
@@ -632,7 +633,15 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
                 dzi_folder = parts[0]
                 base_name = dzi_folder[:-4] if dzi_folder.endswith('_dzi') else dzi_folder
                 case_code = extract_case_code(base_name)
+                is_tho = "THO" in base_name.upper()
+                type_folder = f"{case_code}goc" if is_tho else f"{case_code}mau"
+                match_sub = re.search(r"[-_]([A-Za-z])$", base_name)
+                sub_label = match_sub.group(1).upper() if match_sub else "A"
                 for sub in ["4X", "10X", ""]:
+                    cand_hier = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", "batch_stitched", sub, case_code, type_folder, sub_label, rel))
+                    if os.path.exists(cand_hier):
+                        alt_path = cand_hier
+                        break
                     cand = os.path.abspath(os.path.join(WORKSPACE_DIR, "data", "output", "batch_stitched", sub, case_code, rel))
                     if os.path.exists(cand):
                         alt_path = cand
@@ -646,7 +655,6 @@ class AlignmentToolRequestHandler(BaseHTTPRequestHandler):
 
         # Thử 3: Fallback nếu rel có suffix variant (_01_goc, _02_goc_canmau, ...) nhưng trên đĩa chỉ có thư mục gốc không suffix
         if not os.path.exists(target_path) or os.path.isdir(target_path):
-            import re
             rel_stripped = re.sub(r'_(?:0[1-8]_[a-zA-Z0-9_]+)(?=_dzi|\.dzi|_files)', '', rel)
             if rel_stripped != rel:
                 for base_dir in [OUTPUTS_DIR, os.path.join(WORKSPACE_DIR, "data", "output")]:
